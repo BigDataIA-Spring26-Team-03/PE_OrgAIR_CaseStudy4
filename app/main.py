@@ -7,6 +7,7 @@ from app.routers.assessments import router as assessments_router
 from app.routers.dimension import router as dimension_router, scores_router
 from app.routers.documents import router as documents_router
 from app.routers.signals import router as signals_router
+from app.routers.culture import router as culture_router  # ← ADD THIS
 
 
 def create_app() -> FastAPI:
@@ -23,7 +24,7 @@ def create_app() -> FastAPI:
     app.include_router(scores_router, prefix="/api/v1")
     app.include_router(documents_router)
     app.include_router(signals_router, prefix="/api/v1")
-
+    app.include_router(culture_router, prefix="/api/v1")  # ← ADD THIS
 
     return app
 
