@@ -1,0 +1,83 @@
+{
+  "ticker": "WMT",
+  "dimensions": {
+    "data_infrastructure": {
+      "dimension": "data_infrastructure",
+      "score": 63.28219006381039,
+      "contributing_sources": [
+        "Item 7 (MD&A)",
+        "Item 2 (MD&A)",
+        "Item 1A (Risk)",
+        "digital_presence",
+        "innovation_activity"
+      ],
+      "total_weight": 0.8776,
+      "confidence": 0.8514
+    },
+    "ai_governance": {
+      "dimension": "ai_governance",
+      "score": 66.25858951175407,
+      "contributing_sources": [
+        "leadership_signals",
+        "Item 1A (Risk)"
+      ],
+      "total_weight": 0.4424,
+      "confidence": 0.5625
+    },
+    "technology_stack": {
+      "dimension": "technology_stack",
+      "score": 73.45669291338582,
+      "contributing_sources": [
+        "Item 1 (Business)",
+        "digital_presence",
+        "innovation_activity",
+        "technology_hiring"
+      ],
+      "total_weight": 0.9525,
+      "confidence": 0.92125
+    },
+    "talent": {
+      "dimension": "talent",
+      "score": 95.0,
+      "contributing_sources": [
+        "technology_hiring"
+      ],
+      "total_weight": 0.476,
+      "confidence": 0.56
+    },
+    "leadership": {
+      "dimension": "leadership",
+      "score": 80.82372892739606,
+      "contributing_sources": [
+        "leadership_signals",
+        "Item 7 (MD&A)",
+        "Item 2 (MD&A)",
+        "Item 8.01 (Events)"
+      ],
+      "total_weight": 1.4889,
+      "confidence": 0.86625
+    },
+    "use_case_portfolio": {
+      "dimension": "use_case_portfolio",
+      "score": 93.09794117647058,
+      "contributing_sources": [
+        "Item 1 (Business)",
+        "Item 7 (MD&A)",
+        "Item 2 (MD&A)",
+        "innovation_activity"
+      ],
+      "total_weight": 1.275,
+      "confidence": 1.0
+    },
+    "culture": {
+      "dimension": "culture",
+      "score": 67.62672811059907,
+      "contributing_sources": [
+        "leadership_signals",
+        "technology_hiring"
+      ],
+      "total_weight": 0.1736,
+      "confidence": 0.756
+    }
+  }
+}

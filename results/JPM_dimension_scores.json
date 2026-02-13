@@ -1,0 +1,77 @@
+{
+  "ticker": "JPM",
+  "dimensions": {
+    "data_infrastructure": {
+      "dimension": "data_infrastructure",
+      "score": 39.74172100296384,
+      "contributing_sources": [
+        "innovation_activity",
+        "digital_presence",
+        "Item 1A (Risk)"
+      ],
+      "total_weight": 0.6748,
+      "confidence": 0.9313333333333333
+    },
+    "ai_governance": {
+      "dimension": "ai_governance",
+      "score": 79.7418918918919,
+      "contributing_sources": [
+        "leadership_signals",
+        "Item 1A (Risk)"
+      ],
+      "total_weight": 0.6512,
+      "confidence": 0.693
+    },
+    "technology_stack": {
+      "dimension": "technology_stack",
+      "score": 48.1325776923805,
+      "contributing_sources": [
+        "Item 1 (Business)",
+        "digital_presence",
+        "innovation_activity",
+        "technology_hiring"
+      ],
+      "total_weight": 1.0565,
+      "confidence": 0.99825
+    },
+    "talent": {
+      "dimension": "talent",
+      "score": 24.0,
+      "contributing_sources": [
+        "technology_hiring"
+      ],
+      "total_weight": 0.476,
+      "confidence": 0.56
+    },
+    "leadership": {
+      "dimension": "leadership",
+      "score": 63.32841943058409,
+      "contributing_sources": [
+        "leadership_signals",
+        "Item 8.01 (Events)"
+      ],
+      "total_weight": 0.6814,
+      "confidence": 0.5625
+    },
+    "use_case_portfolio": {
+      "dimension": "use_case_portfolio",
+      "score": 78.77843172236136,
+      "contributing_sources": [
+        "Item 1 (Business)",
+        "innovation_activity"
+      ],
+      "total_weight": 0.8385,
+      "confidence": 0.8775
+    },
+    "culture": {
+      "dimension": "culture",
+      "score": 38.842396313364056,
+      "contributing_sources": [
+        "leadership_signals",
+        "technology_hiring"
+      ],
+      "total_weight": 0.1736,
+      "confidence": 0.756
+    }
+  }
+}
