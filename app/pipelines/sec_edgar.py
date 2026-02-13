@@ -6,7 +6,7 @@ import os
 import time
 from datetime import date
 from pathlib import Path
-from typing import Optional
+from typing import List, Dict, Optional
 from uuid import uuid4
 
 import boto3
@@ -30,21 +30,21 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION
 
 
-TARGET_TICKERS = ["CAT", "DE", "UNH", "HCA", "ADP", "PAYX", "WMT", "TGT", "JPM", "GS"]
+DEFAULT_TARGET_TICKERS = ["CAT", "DE", "UNH", "HCA", "ADP", "PAYX", "WMT", "TGT", "JPM", "GS"]
 
 # Table names (Case Study 3 uses separate tables)
 DOCUMENTS_TABLE = "documents_sec"
 CHUNKS_TABLE = "document_chunks_sec"
 
 # Differential limits: 3 + 4 + 5 + 2 = 14 per company × 10 = 140 total
-FILING_LIMITS = {
+DEFAULT_FILING_TYPES = {
     "10-K": 3,      # Annual reports (3 years)
     "10-Q": 4,      # Quarterly reports (4 quarters)
     "8-K": 5,       # Material events (recent 5)
     "DEF 14A": 2    # Proxy statements (2 years)
 }
 
-FILING_TYPES = list(FILING_LIMITS.keys())
+FILING_TYPES = list(DEFAULT_FILING_TYPES.keys())
 
 # SEC rate limiting: 10 req/sec max, using 0.75s = 1.33 req/sec (safe margin)
 SEC_REQUEST_SLEEP_SECONDS = float(os.getenv("SEC_SLEEP_SECONDS", "0.75"))
@@ -135,8 +135,8 @@ def filing_type_for_paths(filing_type: str) -> str:
         "def-14a" -> "DEF14A"
     """
     t = filing_type.upper().strip()
-    t = t.replace(" ", "")   # Remove spaces
-    t = t.replace("-", "")   # Remove hyphens
+    t = t.replace(" ", "")   
+    t = t.replace("-", "")   
     return t
 
 
@@ -276,7 +276,29 @@ def upload_file_with_retry(
 
 
 # MAIN DOWNLOAD FUNCTION
+def collect_for_tickers(
+    tickers: List[str],
+    filing_types: List[str],
+    limit_per_type: int = 1,
+    after: Optional[str] = None,
+) -> None:
+    """
+    FastAPI-friendly entrypoint.
+    Router passes:
+      tickers: ["CAT"]
+      filing_types: ["10-K","10-Q","8-K","DEF 14A"]
+      limit_per_type: 1..5
+    """
+    global DEFAULT_TARGET_TICKERS, DEFAULT_FILING_TYPES, FILING_TYPES, AFTER_DATE
 
+    DEFAULT_TARGET_TICKERS = [t.upper().strip() for t in tickers if t and t.strip()]
+    DEFAULT_FILING_TYPES = {ft: int(limit_per_type) for ft in filing_types}
+    FILING_TYPES = list(DEFAULT_FILING_TYPES.keys())
+
+    if after:
+        AFTER_DATE = after
+
+    main()
 
 def main() -> None:
     """
@@ -355,7 +377,7 @@ def main() -> None:
     logger.info("\nFetching companies from database...")
     
     # Build dynamic IN clause with parameter substitution (SQL injection safe)
-    placeholders = ",".join([f"%(t{i})s" for i in range(len(TARGET_TICKERS))])
+    placeholders = ",".join([f"%(t{i})s" for i in range(len(DEFAULT_TARGET_TICKERS))])
     
     company_rows = sf.execute_query(
         f"""
@@ -364,7 +386,7 @@ def main() -> None:
         WHERE is_deleted = FALSE
           AND UPPER(ticker) IN ({placeholders})
         """,
-        {f"t{i}": TARGET_TICKERS[i] for i in range(len(TARGET_TICKERS))},
+        {f"t{i}": DEFAULT_TARGET_TICKERS[i] for i in range(len(DEFAULT_TARGET_TICKERS))},
     )
     
     # Build ticker → company_id mapping
@@ -376,7 +398,7 @@ def main() -> None:
         ticker_to_company[str(tid).upper()] = str(cid)
     
     # Fail fast if companies are missing from database
-    missing = [t for t in TARGET_TICKERS if t not in ticker_to_company]
+    missing = [t for t in DEFAULT_TARGET_TICKERS if t not in ticker_to_company]
     if missing:
         raise RuntimeError(
             f"Missing companies in database: {missing}\n"
@@ -405,15 +427,15 @@ def main() -> None:
 
     
     logger.info("\nStarting downloads...")
-    logger.info(f"Expected total: {sum(FILING_LIMITS.values()) * len(TARGET_TICKERS)} documents")
+    logger.info(f"Expected total: {sum(DEFAULT_FILING_TYPES.values()) * len(DEFAULT_TARGET_TICKERS)} documents")
     
-    for ticker_idx, ticker in enumerate(TARGET_TICKERS, 1):
-        logger.info(f"\n[{ticker_idx}/{len(TARGET_TICKERS)}] Processing {ticker}...")
+    for ticker_idx, ticker in enumerate(DEFAULT_TARGET_TICKERS, 1):
+        logger.info(f"\n[{ticker_idx}/{len(DEFAULT_TARGET_TICKERS)}] Processing {ticker}...")
         
         company_stats = {ft: 0 for ft in FILING_TYPES}
         
         for filing_type in FILING_TYPES:
-            limit = FILING_LIMITS[filing_type]
+            limit = DEFAULT_FILING_TYPES[filing_type]
             
             logger.info(f"  {filing_type}: Downloading up to {limit} filings...")
             
@@ -573,7 +595,7 @@ def main() -> None:
     logger.info(f"Skipped (invalid folder):  {stats['skipped_invalid_folder']}")
     logger.info("=" * 60)
     
-    expected = sum(FILING_LIMITS.values()) * len(TARGET_TICKERS)
+    expected = sum(DEFAULT_FILING_TYPES.values()) * len(DEFAULT_TARGET_TICKERS)
     logger.info(f"\nExpected: ~{expected} documents")
     logger.info(f"Actual:    {stats['inserted']} documents")
     

@@ -26,14 +26,17 @@ class S3Storage:
     """
 
     def __init__(self) -> None:
-        self.bucket = settings.resolved_s3_bucket
-        self.prefix = (settings.s3_prefix or "").strip("/")
+        bucket = settings.S3_BUCKET_NAME
+        if not bucket:
+            raise ValueError("S3 bucket not configured. Set S3_BUCKET_NAME (or S3_BUCKET).")
 
+        self.bucket = bucket
+        self.prefix = "" 
         self.client = boto3.client(
             "s3",
-            region_name=settings.resolved_aws_region,
-            aws_access_key_id=settings.aws_access_key_id,
-            aws_secret_access_key=settings.aws_secret_access_key,
+            region_name=settings.AWS_REGION or "us-east-1",
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
         )
 
     # -------------------------
@@ -131,10 +134,7 @@ class S3Storage:
         """
         data = self.get_bytes(key)
 
-        is_gz = (
-            key.endswith(".gz")
-            or (len(data) >= 2 and data[0] == 0x1F and data[1] == 0x8B)
-        )
+        is_gz = key.endswith(".gz") or (len(data) >= 2 and data[0] == 0x1F and data[1] == 0x8B)
 
         if is_gz:
             try:
@@ -151,10 +151,7 @@ class S3Storage:
         """
         data = self.get_bytes(key)
 
-        is_gz = (
-            key.endswith(".gz")
-            or (len(data) >= 2 and data[0] == 0x1F and data[1] == 0x8B)
-        )
+        is_gz = key.endswith(".gz") or (len(data) >= 2 and data[0] == 0x1F and data[1] == 0x8B)
 
         if is_gz:
             try:
