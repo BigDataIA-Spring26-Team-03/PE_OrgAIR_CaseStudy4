@@ -19,7 +19,7 @@ from src.scoring.evidence_mapper import (
     Dimension,
     SignalSource,
     load_all_evidence_from_snowflake,
-    load_sec_evidence_from_snowflake,
+    load_sec_evidence_from_snowflake_with_rubrics,
     load_external_signals_from_snowflake,
     load_culture_evidence_from_snowflake,
 )
