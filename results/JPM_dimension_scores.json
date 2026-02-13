@@ -3,36 +3,36 @@
   "dimensions": {
     "data_infrastructure": {
       "dimension": "data_infrastructure",
-      "score": 39.74172100296384,
+      "score": 35.8408958183169,
       "contributing_sources": [
-        "innovation_activity",
         "digital_presence",
-        "Item 1A (Risk)"
+        "Item 1A (Risk)",
+        "innovation_activity"
       ],
-      "total_weight": 0.6748,
-      "confidence": 0.9313333333333333
+      "total_weight": 0.77875,
+      "confidence": 0.8573125
     },
     "ai_governance": {
       "dimension": "ai_governance",
-      "score": 79.7418918918919,
+      "score": 52.76612665684831,
       "contributing_sources": [
         "leadership_signals",
         "Item 1A (Risk)"
       ],
-      "total_weight": 0.6512,
-      "confidence": 0.693
+      "total_weight": 1.067,
+      "confidence": 0.63525
     },
     "technology_stack": {
       "dimension": "technology_stack",
-      "score": 48.1325776923805,
+      "score": 37.964884902294166,
       "contributing_sources": [
-        "Item 1 (Business)",
         "digital_presence",
         "innovation_activity",
+        "Item 1 (Business)",
         "technology_hiring"
       ],
-      "total_weight": 1.0565,
-      "confidence": 0.99825
+      "total_weight": 1.073375,
+      "confidence": 0.81235
     },
     "talent": {
       "dimension": "talent",
@@ -45,23 +45,23 @@
     },
     "leadership": {
       "dimension": "leadership",
-      "score": 63.32841943058409,
+      "score": 45.12813990461049,
       "contributing_sources": [
-        "leadership_signals",
-        "Item 8.01 (Events)"
+        "Item 8.01 (Events)",
+        "leadership_signals"
       ],
-      "total_weight": 0.6814,
-      "confidence": 0.5625
+      "total_weight": 0.6919,
+      "confidence": 0.56925
     },
     "use_case_portfolio": {
       "dimension": "use_case_portfolio",
-      "score": 78.77843172236136,
+      "score": 48.39587070961128,
       "contributing_sources": [
         "Item 1 (Business)",
         "innovation_activity"
       ],
-      "total_weight": 0.8385,
-      "confidence": 0.8775
+      "total_weight": 0.877875,
+      "confidence": 0.60375
     },
     "culture": {
       "dimension": "culture",

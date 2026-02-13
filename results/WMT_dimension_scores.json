@@ -3,38 +3,38 @@
   "dimensions": {
     "data_infrastructure": {
       "dimension": "data_infrastructure",
-      "score": 63.28219006381039,
+      "score": 47.6146438235536,
       "contributing_sources": [
-        "Item 7 (MD&A)",
+        "innovation_activity",
         "Item 2 (MD&A)",
-        "Item 1A (Risk)",
+        "Item 7 (MD&A)",
         "digital_presence",
-        "innovation_activity"
+        "Item 1A (Risk)"
       ],
-      "total_weight": 0.8776,
-      "confidence": 0.8514
+      "total_weight": 1.2463275,
+      "confidence": 0.6617325
     },
     "ai_governance": {
       "dimension": "ai_governance",
-      "score": 66.25858951175407,
+      "score": 35.7347275729224,
       "contributing_sources": [
         "leadership_signals",
         "Item 1A (Risk)"
       ],
-      "total_weight": 0.4424,
-      "confidence": 0.5625
+      "total_weight": 0.7268,
+      "confidence": 0.4935
     },
     "technology_stack": {
       "dimension": "technology_stack",
-      "score": 73.45669291338582,
+      "score": 62.51407187307282,
       "contributing_sources": [
-        "Item 1 (Business)",
         "digital_presence",
         "innovation_activity",
+        "Item 1 (Business)",
         "technology_hiring"
       ],
-      "total_weight": 0.9525,
-      "confidence": 0.92125
+      "total_weight": 1.07022,
+      "confidence": 0.83292
     },
     "talent": {
       "dimension": "talent",
@@ -47,27 +47,27 @@
     },
     "leadership": {
       "dimension": "leadership",
-      "score": 80.82372892739606,
+      "score": 61.38693763645282,
       "contributing_sources": [
-        "leadership_signals",
-        "Item 7 (MD&A)",
         "Item 2 (MD&A)",
-        "Item 8.01 (Events)"
+        "Item 7 (MD&A)",
+        "Item 8.01 (Events)",
+        "leadership_signals"
       ],
-      "total_weight": 1.4889,
-      "confidence": 0.86625
+      "total_weight": 2.45906875,
+      "confidence": 0.718265625
     },
     "use_case_portfolio": {
       "dimension": "use_case_portfolio",
-      "score": 93.09794117647058,
+      "score": 59.37242038778957,
       "contributing_sources": [
-        "Item 1 (Business)",
-        "Item 7 (MD&A)",
         "Item 2 (MD&A)",
+        "Item 7 (MD&A)",
+        "Item 1 (Business)",
         "innovation_activity"
       ],
-      "total_weight": 1.275,
-      "confidence": 1.0
+      "total_weight": 1.99612125,
+      "confidence": 0.7133805555555556
     },
     "culture": {
       "dimension": "culture",

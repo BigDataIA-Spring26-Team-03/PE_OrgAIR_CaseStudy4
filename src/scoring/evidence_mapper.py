@@ -6,7 +6,11 @@ from typing import Dict, List, Optional, Any
 from enum import Enum
 from decimal import Decimal
 import logging
-
+from scoring.rubric_scorer import (
+    RubricScorer,
+    concatenate_evidence_chunks,
+    extract_quantitative_metrics
+)
 logger = logging.getLogger(__name__)
 
 # ENUMS & DATA MODELS
@@ -397,69 +401,29 @@ class EvidenceMapper:
 # SNOWFLAKE DATA LOADING FUNCTIONS
 
 
-
-# Calculate evidence score based on quantity and expected baselines
-# This is a TEMPORARY scoring function until Task 5.0b (Rubric Scorer) is implemented.
-def calculate_sec_evidence_score(chunk_count: int, avg_words: float, section: str) -> Decimal:
-    
-    # Define baseline expectations per section
-    baselines = {
-        "Item 1 (Business)": 50,
-        "Item 1A (Risk)": 30,
-        "Item 7 (MD&A)": 40,
-        "Item 2 (MD&A)": 40,
-        "Item 8.01 (Events)": 20,
-        "Executive Comp": 15,
-    }
-    
-    baseline = baselines.get(section, 30)
-    
-    # Score based on percentage of baseline
-    # 0% of baseline = 40 (minimal)
-    # 100% of baseline = 70 (adequate)
-    # 200% of baseline = 90 (comprehensive)
-    # Cap at 95 (never perfect without quality analysis)
-    
-    ratio = Decimal(str(chunk_count)) / Decimal(str(baseline))
-    
-    if ratio < Decimal("0.3"):
-        score = Decimal("30")  # Very sparse
-    elif ratio < Decimal("0.7"):
-        score = Decimal("40") + (ratio - Decimal("0.3")) * Decimal("50")  # 40-60
-    elif ratio < Decimal("1.5"):
-        score = Decimal("60") + (ratio - Decimal("0.7")) * Decimal("25")  # 60-80
-    else:
-        score = Decimal("80") + min((ratio - Decimal("1.5")) * Decimal("10"), Decimal("15"))  # 80-95
-    
-    # Adjust for content quality (word count indicator)
-    avg_words_decimal = Decimal(str(avg_words)) if avg_words else Decimal("150")
-    
-    if avg_words_decimal < Decimal("100"):
-        score *= Decimal("0.9")  # Penalty for short chunks (likely headers/junk)
-    elif avg_words_decimal > Decimal("300"):
-        score *= Decimal("1.05")  # Boost for substantive chunks
-    
-    return max(Decimal("20"), min(Decimal("95"), score))
-
 # Aggregates chunks by section and converts to EvidenceScore objects
-def load_sec_evidence_from_snowflake(
+# Load SEC document chunks from Snowflake and score using rubrics
+def load_sec_evidence_from_snowflake_with_rubrics(
     ticker: str,
     snowflake_service
 ) -> List[EvidenceScore]:
+    # Initialize rubric scorer
+    scorer = RubricScorer()
+    
+    # Load all chunks grouped by section
     query = """
         SELECT 
             c.section,
-            COUNT(*) as chunk_count,
-            AVG(c.word_count) as avg_words,
-            SUM(LENGTH(c.content)) as total_chars
+            c.content,
+            c.word_count,
+            COUNT(*) OVER (PARTITION BY c.section) as section_chunk_count
         FROM document_chunks_sec c
         JOIN documents_sec d ON c.document_id = d.id
         WHERE d.ticker = %(ticker)s
         AND c.section IS NOT NULL
         AND c.section != 'Unknown'
         AND c.section != 'Intro'
-        GROUP BY c.section
-        ORDER BY chunk_count DESC
+        ORDER BY c.section, c.chunk_index
     """
     
     try:
@@ -468,46 +432,89 @@ def load_sec_evidence_from_snowflake(
         logger.error(f"Failed to load SEC evidence for {ticker}: {e}")
         return []
     
-    evidence_scores = []
+    if not results:
+        logger.info(f"No SEC evidence found for {ticker}")
+        return []
     
+    # Group chunks by section
+    chunks_by_section = {}
     for row in results:
         section = row['section']
-        count = row['chunk_count']
-        avg_words = row['avg_words'] or 0
-        total_chars = row['total_chars'] or 0
+        content = row['content']
         
-        # Map section name to SignalSource
+        if section not in chunks_by_section:
+            chunks_by_section[section] = []
+        
+        chunks_by_section[section].append(content)
+    
+    # Map sections to dimensions and score with rubrics
+    evidence_scores = []
+    
+    for section, chunks in chunks_by_section.items():
+        # Map section to SignalSource
         try:
             source = SignalSource(section)
         except ValueError:
             logger.warning(f"Unknown section type: {section}")
             continue
         
-        # Generate score based on evidence quality
-        # Simple heuristic: more chunks + more content = higher score
-        # This will be refined with rubric scoring in Task 5.0b
-        raw_score = calculate_sec_evidence_score(count, avg_words, section)
+        # Determine which dimensions this section contributes to
+        mapping = SIGNAL_TO_DIMENSION_MAP.get(source)
+        if not mapping:
+            logger.warning(f"No dimension mapping for section: {section}")
+            continue
         
-        # Confidence based on amount of evidence
-        # More chunks = higher confidence (up to 0.95)
-        confidence = min(Decimal("0.95"), Decimal(str(count)) / Decimal("100"))
-        confidence = max(Decimal("0.3"), confidence)
+        # Get all dimensions this section maps to
+        dimensions = [mapping.primary_dimension]
+        dimensions.extend(mapping.secondary_mappings.keys())
         
-        evidence_scores.append(EvidenceScore(
-            source=source,
-            raw_score=raw_score,
-            confidence=confidence,
-            evidence_count=count,
-            metadata={
-                'ticker': ticker,
-                'section': section,
-                'total_chars': total_chars,
-                'avg_words': float(avg_words)
-            }
-        ))
+        # Concatenate chunks for analysis
+        concatenated_text = concatenate_evidence_chunks(chunks)
+        
+        # Score each dimension using rubrics
+        for dimension in dimensions:
+            # Extract any quantitative metrics from metadata
+            # (In practice, you'd get these from your CS2 external signals)
+            metrics = {}
+            
+            # Score using rubric
+            rubric_result = scorer.score_dimension(
+                dimension.value,
+                concatenated_text,
+                metrics
+            )
+            
+            # Determine weight based on primary vs secondary
+            if dimension == mapping.primary_dimension:
+                weight_factor = mapping.primary_weight
+            else:
+                weight_factor = mapping.secondary_mappings[dimension]
+            
+            # Create EvidenceScore with rubric-based score
+            # Weight the rubric score by the mapping weight
+            weighted_score = rubric_result.score * Decimal(str(float(weight_factor)))
+            
+            # Adjust confidence based on source reliability
+            adjusted_confidence = rubric_result.confidence * mapping.reliability
+            
+            evidence_scores.append(EvidenceScore(
+                source=source,
+                raw_score=rubric_result.score,  # Keep original rubric score
+                confidence=adjusted_confidence,
+                evidence_count=len(chunks),
+                metadata={
+                    'ticker': ticker,
+                    'section': section,
+                    'dimension': dimension.value,
+                    'rubric_level': rubric_result.level.label,
+                    'matched_keywords': rubric_result.matched_keywords[:5],
+                    'weight_factor': float(weight_factor)
+                }
+            ))
     
-    logger.info(f"Loaded {len(evidence_scores)} SEC evidence sources for {ticker}")
+    logger.info(f"Loaded and scored {len(evidence_scores)} evidence items for {ticker} using rubrics")
     return evidence_scores
+
 
 # Aggregates signals by category and converts to EvidenceScore objects
 def load_external_signals_from_snowflake(
@@ -639,7 +646,7 @@ def load_all_evidence_from_snowflake(
     evidence_scores = []
     
     # Load SEC evidence
-    sec_evidence = load_sec_evidence_from_snowflake(ticker, snowflake_service)
+    sec_evidence = load_sec_evidence_from_snowflake_with_rubrics(ticker, snowflake_service)
     evidence_scores.extend(sec_evidence)
     logger.info(f"  ✓ {len(sec_evidence)} SEC sources")
     
