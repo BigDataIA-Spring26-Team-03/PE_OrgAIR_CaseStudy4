@@ -23,6 +23,7 @@ lxml = "^6.0.2"
 python-jobspy = "^1.1.82"
 streamlit = "^1.54.0"
 plotly = "^6.5.2"
+hypothesis = "^6.151.6"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
