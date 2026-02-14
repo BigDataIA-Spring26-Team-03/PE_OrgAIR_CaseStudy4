@@ -240,3 +240,7 @@ __marimo__/
 
 
 data/
+
+# Claude Code
+CLAUDE.md
+.claude/    
