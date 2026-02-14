@@ -637,31 +637,84 @@ def load_culture_evidence_from_snowflake(
         return []
 
 
+def load_board_evidence_from_snowflake(
+    ticker: str,
+    snowflake_service
+) -> List[EvidenceScore]:
+    """Load board governance signals from Snowflake as EvidenceScore."""
+    query = """
+        SELECT
+            governance_score,
+            confidence
+        FROM board_governance_signals
+        WHERE ticker = %(ticker)s
+        ORDER BY created_at DESC
+        LIMIT 1
+    """
+
+    try:
+        results = snowflake_service.execute_query(query, {'ticker': ticker.upper()})
+
+        if not results:
+            logger.info(f"No board governance data found for {ticker}")
+            return []
+
+        row = results[0]
+        governance_score = row.get('governance_score') or row.get('GOVERNANCE_SCORE')
+        confidence = row.get('confidence') or row.get('CONFIDENCE')
+
+        if governance_score is None:
+            return []
+
+        evidence_scores = [EvidenceScore(
+            source=SignalSource.BOARD_COMPOSITION,
+            raw_score=Decimal(str(governance_score)),
+            confidence=Decimal(str(confidence)),
+            evidence_count=1,
+            metadata={
+                'ticker': ticker,
+                'governance_score': float(governance_score),
+            }
+        )]
+
+        logger.info(f"Loaded board governance evidence for {ticker}")
+        return evidence_scores
+
+    except Exception as e:
+        logger.warning(f"Could not load board governance signals for {ticker}: {e}")
+        return []
+
+
 def load_all_evidence_from_snowflake(
     ticker: str,
     snowflake_service
 ) -> List[EvidenceScore]:
     logger.info(f"Loading all evidence for {ticker}")
-    
+
     evidence_scores = []
-    
+
     # Load SEC evidence
     sec_evidence = load_sec_evidence_from_snowflake_with_rubrics(ticker, snowflake_service)
     evidence_scores.extend(sec_evidence)
     logger.info(f"  ✓ {len(sec_evidence)} SEC sources")
-    
+
     # Load external signals
     external_evidence = load_external_signals_from_snowflake(ticker, snowflake_service)
     evidence_scores.extend(external_evidence)
     logger.info(f"  ✓ {len(external_evidence)} external signal sources")
-    
+
     # Load culture signals
     culture_evidence = load_culture_evidence_from_snowflake(ticker, snowflake_service)
     evidence_scores.extend(culture_evidence)
     logger.info(f"  ✓ {len(culture_evidence)} culture sources")
-    
+
+    # Load board governance signals
+    board_evidence = load_board_evidence_from_snowflake(ticker, snowflake_service)
+    evidence_scores.extend(board_evidence)
+    logger.info(f"  ✓ {len(board_evidence)} board governance sources")
+
     logger.info(f"Total evidence sources for {ticker}: {len(evidence_scores)}")
-    
+
     return evidence_scores
 
 
