@@ -38,6 +38,7 @@ class Settings(BaseSettings):
 
     SEC_EDGAR_USER_AGENT_EMAIL: str
     SEC_SLEEP_SECONDS: float = 0.75
+    RAPIDAPI_KEY: str = Field(default="")
 
     
     # NEW: USPTO API (for CS2)

@@ -32,13 +32,13 @@ async def list_all_signals(
     count_result = db.execute_query("SELECT COUNT(*) as total FROM culture_signals")
     total = count_result[0].get('TOTAL') or count_result[0].get('total') if count_result else 0
     
-    query = """
+    query = f"""
         SELECT * FROM culture_signals
         ORDER BY created_at DESC
-        LIMIT :limit OFFSET :offset
+        LIMIT {limit} OFFSET {offset}
     """
     
-    results = db.execute_query(query, {'limit': limit, 'offset': offset})
+    results = db.execute_query(query)
     
     items = [
         CultureSignalSummary(
@@ -73,13 +73,13 @@ async def list_all_signals(
 async def list_signals_by_ticker(ticker: str):
     """List all culture signals for a specific company (by ticker)."""
     
-    query = """
+    query = f"""
         SELECT * FROM culture_signals
-        WHERE ticker = :ticker
+        WHERE ticker = '{ticker.upper()}'
         ORDER BY created_at DESC
     """
     
-    results = db.execute_query(query, {'ticker': ticker.upper()})
+    results = db.execute_query(query)
     
     if not results:
         return []
@@ -115,7 +115,7 @@ async def list_signals_by_ticker(ticker: str):
 # LIST ALL REVIEWS
 # ============================================================================
 
-@router.get("/reviews", response_model=List[dict])
+@router.get("/reviews")
 async def list_all_reviews(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200)
@@ -124,7 +124,7 @@ async def list_all_reviews(
     
     offset = (page - 1) * limit
     
-    query = """
+    query = f"""
         SELECT 
             gr.*,
             cs.ticker,
@@ -132,10 +132,10 @@ async def list_all_reviews(
         FROM glassdoor_reviews gr
         LEFT JOIN culture_signals cs ON gr.culture_signal_id = cs.id
         ORDER BY gr.review_date DESC
-        LIMIT :limit OFFSET :offset
+        LIMIT {limit} OFFSET {offset}
     """
     
-    results = db.execute_query(query, {'limit': limit, 'offset': offset})
+    results = db.execute_query(query)
     
     reviews = [
         {
@@ -167,18 +167,18 @@ async def list_all_reviews(
 async def list_reviews_by_ticker(ticker: str):
     """List all reviews for a specific company (by ticker)."""
     
-    query = """
+    query = f"""
         SELECT 
             gr.*,
             cs.ticker,
             cs.overall_score as culture_score
         FROM glassdoor_reviews gr
         LEFT JOIN culture_signals cs ON gr.culture_signal_id = cs.id
-        WHERE cs.ticker = :ticker
+        WHERE cs.ticker = '{ticker.upper()}'
         ORDER BY gr.review_date DESC
     """
     
-    results = db.execute_query(query, {'ticker': ticker.upper()})
+    results = db.execute_query(query)
     
     reviews = [
         {
@@ -208,7 +208,7 @@ async def list_reviews_by_ticker(ticker: str):
 
 
 # ============================================================================
-# LIST SCORES (Simple score view without full details)
+# LIST SCORES
 # ============================================================================
 
 @router.get("/scores")
@@ -216,11 +216,11 @@ async def list_all_scores(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100)
 ):
-    """List ALL scores (simple view) - just ticker and overall score."""
+    """List ALL scores (simple view)."""
     
     offset = (page - 1) * limit
     
-    query = """
+    query = f"""
         SELECT 
             ticker,
             overall_score,
@@ -230,10 +230,10 @@ async def list_all_scores(
             created_at
         FROM culture_signals
         ORDER BY overall_score DESC
-        LIMIT :limit OFFSET :offset
+        LIMIT {limit} OFFSET {offset}
     """
     
-    results = db.execute_query(query, {'limit': limit, 'offset': offset})
+    results = db.execute_query(query)
     
     scores = [
         {
@@ -257,7 +257,7 @@ async def list_all_scores(
 async def list_scores_by_ticker(ticker: str):
     """List scores for a specific company (by ticker)."""
     
-    query = """
+    query = f"""
         SELECT 
             ticker,
             overall_score,
@@ -270,11 +270,11 @@ async def list_scores_by_ticker(ticker: str):
             confidence,
             created_at
         FROM culture_signals
-        WHERE ticker = :ticker
+        WHERE ticker = '{ticker.upper()}'
         ORDER BY created_at DESC
     """
     
-    results = db.execute_query(query, {'ticker': ticker.upper()})
+    results = db.execute_query(query)
     
     if not results:
         raise HTTPException(
@@ -317,12 +317,12 @@ async def collect_by_ticker(
     """
     Collect culture data for a specific company (by ticker).
     
-    This triggers the Glassdoor collector, analyzes reviews, and saves to DB.
+    Triggers Glassdoor collector, analyzes reviews, saves to Snowflake.
     """
     
     # Get company_id from ticker
-    company_query = "SELECT id FROM companies WHERE ticker = :ticker"
-    company_result = db.execute_query(company_query, {'ticker': ticker.upper()})
+    company_query = f"SELECT id FROM companies WHERE ticker = '{ticker.upper()}'"
+    company_result = db.execute_query(company_query)
     
     if not company_result:
         raise HTTPException(
@@ -341,47 +341,46 @@ async def collect_by_ticker(
         # Save to database
         signal_id = str(uuid_lib.uuid4())
         
-        insert_sql = """
+        insert_sql = f"""
             INSERT INTO culture_signals (
                 id, company_id, ticker,
                 innovation_score, data_driven_score, change_readiness_score, ai_awareness_score,
                 overall_score, review_count, avg_rating, current_employee_ratio, confidence,
                 positive_keywords_found, negative_keywords_found, created_at
             ) VALUES (
-                :id, :company_id, :ticker,
-                :innovation_score, :data_driven_score, :change_readiness_score, :ai_awareness_score,
-                :overall_score, :review_count, :avg_rating, :current_employee_ratio, :confidence,
-                :positive_keywords, :negative_keywords, :created_at
+                '{signal_id}', 
+                '{company_id}', 
+                '{ticker.upper()}',
+                {float(culture_data.get('innovation_score', 50))}, 
+                {float(culture_data.get('data_driven_score', 50))}, 
+                {float(culture_data.get('change_readiness_score', 50))}, 
+                {float(culture_data.get('ai_awareness_score', 50))},
+                {float(culture_data['culture_score'])}, 
+                {culture_data['review_count']}, 
+                {float(culture_data['avg_rating'])}, 
+                {float(culture_data.get('current_employee_ratio', 0.5))}, 
+                {float(culture_data['confidence'])},
+                '{json.dumps(culture_data.get('positive_keywords_found', []))}', 
+                '{json.dumps(culture_data.get('negative_keywords_found', []))}', 
+                CURRENT_TIMESTAMP()
             )
         """
         
-        params = {
-            'id': signal_id,
-            'company_id': str(company_id),
-            'ticker': ticker.upper(),
-            'innovation_score': float(culture_data.get('innovation_score', 50)),
-            'data_driven_score': float(culture_data.get('data_driven_score', 50)),
-            'change_readiness_score': float(culture_data.get('change_readiness_score', 50)),
-            'ai_awareness_score': float(culture_data.get('ai_awareness_score', 50)),
-            'overall_score': float(culture_data['culture_score']),
-            'review_count': culture_data['review_count'],
-            'avg_rating': float(culture_data['avg_rating']),
-            'current_employee_ratio': 0.5,
-            'confidence': float(culture_data['confidence']),
-            'positive_keywords': json.dumps([]),
-            'negative_keywords': json.dumps([]),
-            'created_at': datetime.utcnow()
-        }
-        
-        db.execute_update(insert_sql, params)
+        db.execute_update(insert_sql)
         
         return {
             "message": f"Culture signal collected for {ticker}",
             "ticker": ticker.upper(),
             "signal_id": signal_id,
             "culture_score": culture_data['culture_score'],
+            "innovation_score": culture_data.get('innovation_score'),
+            "data_driven_score": culture_data.get('data_driven_score'),
+            "change_readiness_score": culture_data.get('change_readiness_score'),
+            "ai_awareness_score": culture_data.get('ai_awareness_score'),
             "review_count": culture_data['review_count'],
-            "confidence": culture_data['confidence']
+            "avg_rating": culture_data['avg_rating'],
+            "confidence": culture_data['confidence'],
+            "rationale": culture_data.get('rationale')
         }
         
     except Exception as e:
@@ -394,13 +393,10 @@ async def collect_by_ticker(
 async def collect_all_companies(
     use_cache: bool = Query(True, description="Use cached data")
 ):
-    """
-    Collect culture signals for ALL companies.
+    """Collect culture signals for ALL companies."""
     
-    Runs collector for every company in the database.
-    """
-    
-    companies = db.execute_query("SELECT id, ticker FROM companies ORDER BY ticker")
+    companies_query = "SELECT id, ticker FROM companies ORDER BY ticker"
+    companies = db.execute_query(companies_query)
     
     if not companies:
         raise HTTPException(status_code=404, detail="No companies found")
