@@ -46,7 +46,7 @@ async def list_all_signals(
     query = """
         SELECT * FROM board_governance_signals
         ORDER BY created_at DESC
-        LIMIT :limit OFFSET :offset
+        LIMIT %(limit)s OFFSET %(offset)s
     """
     results = db.execute_query(query, {"limit": limit, "offset": offset})
 
@@ -78,7 +78,7 @@ async def list_signals_by_ticker(ticker: str):
     """List board governance signals for a specific company."""
     query = """
         SELECT * FROM board_governance_signals
-        WHERE ticker = :ticker
+        WHERE ticker = %(ticker)s
         ORDER BY created_at DESC
     """
     results = db.execute_query(query, {"ticker": ticker.upper()})
@@ -129,7 +129,7 @@ async def list_members_by_ticker(ticker: str):
         SELECT bm.*
         FROM board_members bm
         JOIN board_governance_signals bgs ON bm.governance_signal_id = bgs.id
-        WHERE bgs.ticker = :ticker
+        WHERE bgs.ticker = %(ticker)s
         ORDER BY bm.name
     """
     results = db.execute_query(query, {"ticker": ticker.upper()})
@@ -172,7 +172,7 @@ async def collect_by_ticker(
     Scrapes SEC EDGAR proxy, runs BoardCompositionAnalyzer, persists to Snowflake.
     """
     # Resolve company_id
-    company_query = "SELECT id FROM companies WHERE ticker = :ticker"
+    company_query = "SELECT id FROM companies WHERE ticker = %(ticker)s"
     company_result = db.execute_query(company_query, {"ticker": ticker.upper()})
 
     if not company_result:
@@ -185,14 +185,45 @@ async def collect_by_ticker(
 
     try:
         from app.pipelines.board_collector import BoardCompositionCollector
+        from app.pipelines.board_chunker import chunk_proxy_text
+        from app.pipelines.board_llm_extractor import (
+            extract_from_chunks,
+            merge_extractions,
+            quality_check,
+        )
         from scoring.board_analyzer import (
             BoardCompositionAnalyzer,
             BoardMember,
         )
 
-        # 1. Collect raw board data
+        # 1. Collect raw text from EDGAR
         collector = BoardCompositionCollector()
         raw = collector.collect_board_data(ticker.upper(), use_cache=use_cache)
+
+        # If no cached members, run LLM pipeline
+        if not raw.get("members"):
+            raw_text_data = collector.collect_raw_text(ticker.upper())
+            raw_text = raw_text_data.get("raw_text", "")
+            if not raw_text:
+                raise HTTPException(status_code=422, detail="No proxy text available")
+
+            chunks = chunk_proxy_text(raw_text)
+            if not chunks:
+                raise HTTPException(status_code=422, detail="No usable chunks from proxy")
+
+            extractions = extract_from_chunks(chunks, ticker.upper(), use_cache=use_cache)
+            if not extractions:
+                raise HTTPException(status_code=422, detail="LLM extraction produced no results")
+
+            members_raw = merge_extractions(extractions)
+            raw["members"] = members_raw
+            collector.cache_with_members(ticker.upper(), raw)
+        else:
+            members_raw = raw["members"]
+
+        ok, reason = quality_check(members_raw)
+        if not ok:
+            raise HTTPException(status_code=422, detail=f"Quality gate failed: {reason}")
 
         # 2. Convert member dicts to BoardMember dataclasses
         members = [
@@ -204,7 +235,7 @@ async def collect_by_ticker(
                 is_independent=m.get("is_independent", False),
                 tenure_years=m.get("tenure_years", 0.0),
             )
-            for m in raw.get("members", [])
+            for m in members_raw
         ]
 
         # 3. Analyze with BoardCompositionAnalyzer
@@ -228,11 +259,11 @@ async def collect_by_ticker(
                 has_risk_tech_oversight, has_ai_strategy,
                 ai_experts, evidence, confidence, created_at
             ) VALUES (
-                :id, :company_id, :ticker,
-                :governance_score, :has_tech_committee, :has_ai_expertise,
-                :has_data_officer, :has_independent_majority,
-                :has_risk_tech_oversight, :has_ai_strategy,
-                :ai_experts, :evidence, :confidence, :created_at
+                %(id)s, %(company_id)s, %(ticker)s,
+                %(governance_score)s, %(has_tech_committee)s, %(has_ai_expertise)s,
+                %(has_data_officer)s, %(has_independent_majority)s,
+                %(has_risk_tech_oversight)s, %(has_ai_strategy)s,
+                %(ai_experts)s, %(evidence)s, %(confidence)s, %(created_at)s
             )
         """
 
@@ -263,9 +294,9 @@ async def collect_by_ticker(
                 name, title, committees, bio,
                 is_independent, tenure_years, created_at
             ) VALUES (
-                :id, :company_id, :governance_signal_id,
-                :name, :title, :committees, :bio,
-                :is_independent, :tenure_years, :created_at
+                %(id)s, %(company_id)s, %(governance_signal_id)s,
+                %(name)s, %(title)s, %(committees)s, %(bio)s,
+                %(is_independent)s, %(tenure_years)s, %(created_at)s
             )
         """
 
@@ -295,6 +326,8 @@ async def collect_by_ticker(
             "confidence": float(signal.confidence),
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()

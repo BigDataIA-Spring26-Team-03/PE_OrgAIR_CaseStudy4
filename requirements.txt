@@ -8,3 +8,7 @@ structlog
 pytest
 httpx
 ruff
+langchain>=0.3
+langchain-openai>=0.3
+python-dotenv
+beautifulsoup4
