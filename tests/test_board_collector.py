@@ -1,6 +1,9 @@
 """
-Tests for BoardCompositionCollector — proxy HTML parsing, caching, and
-end-to-end scoring integration with BoardCompositionAnalyzer.
+Tests for the LLM-powered board composition pipeline:
+- BoardCompositionCollector (Stage 1: text extraction)
+- board_chunker (Stage 2: chunking)
+- board_llm_extractor (Stage 3-4: extraction + merge)
+- BoardCompositionAnalyzer integration (Stage 5: scoring)
 """
 
 import sys
@@ -8,12 +11,22 @@ import json
 import tempfile
 from pathlib import Path
 from decimal import Decimal
+from unittest.mock import patch, MagicMock
 
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 sys.path.insert(0, str(project_root))
 
 from app.pipelines.board_collector import BoardCompositionCollector
+from app.pipelines.board_chunker import chunk_proxy_text, _is_garbage_chunk
+from app.pipelines.board_llm_extractor import (
+    DirectorExtraction,
+    ChunkExtraction,
+    merge_extractions,
+    quality_check,
+    _normalize_name,
+    _merge_into,
+)
 from scoring.board_analyzer import BoardCompositionAnalyzer, BoardMember
 
 
@@ -24,36 +37,24 @@ SAMPLE_PROXY_HTML = """
 <body>
 <h2>Proposal 1 — Election of Directors</h2>
 <div>
-    <table>
-        <tr>
-            <td>Dr. Jane Smith</td>
-            <td>Independent Director. Chief Technology Officer of Acme Corp.
-                Expertise in artificial intelligence and machine learning.
-                Member of the Technology Committee and Audit Committee.
-                Appointed since 2018.</td>
-        </tr>
-        <tr>
-            <td>John Doe</td>
-            <td>Independent Director. Former President and CEO.
-                Member of the Compensation Committee and Risk Committee.
-                Serving since 2015.</td>
-        </tr>
-        <tr>
-            <td>Alice Johnson</td>
-            <td>Chief Data Officer. Leads data science and analytics initiatives.
-                Member of the Audit Committee. Joined 2020.</td>
-        </tr>
-        <tr>
-            <td>Bob Williams</td>
-            <td>Director. Background in finance and operations.
-                Member of the Finance Committee. Since 2019.</td>
-        </tr>
-        <tr>
-            <td>Carol Davis</td>
-            <td>Independent Director. Expertise in cybersecurity and digital strategy.
-                Member of the Risk Committee. Appointed 2021.</td>
-        </tr>
-    </table>
+    <p><b>Dr. Jane Smith</b></p>
+    <p>Independent Director. Chief Technology Officer of Acme Corp.
+        Expertise in artificial intelligence and machine learning.
+        Member of the Technology Committee and Audit Committee.
+        Appointed since 2018.</p>
+    <p><b>John Doe</b></p>
+    <p>Independent Director. Former President and CEO.
+        Member of the Compensation Committee and Risk Committee.
+        Serving since 2015.</p>
+    <p><b>Alice Johnson</b></p>
+    <p>Chief Data Officer. Leads data science and analytics initiatives.
+        Member of the Audit Committee. Joined 2020.</p>
+    <p><b>Bob Williams</b></p>
+    <p>Director. Background in finance and operations.
+        Member of the Finance Committee. Since 2019.</p>
+    <p><b>Carol Davis</b></p>
+    <p>Independent Director. Expertise in cybersecurity and digital strategy.
+        Member of the Risk Committee. Appointed 2021.</p>
 </div>
 
 <h3>Committees of the Board</h3>
@@ -67,140 +68,111 @@ We are also leveraging machine learning across our operations.</p>
 </html>
 """
 
-MINIMAL_PROXY_HTML = """
-<html><body>
-<h2>Board of Directors</h2>
-<div>
-    <p><b>Sarah Connor</b></p>
-    <p>Independent Director. Since 2022.</p>
-    <p><b>James Kirk</b></p>
-    <p>Director. Chairman of the board.</p>
-</div>
-</body></html>
-"""
-
 EMPTY_PROXY_HTML = """
 <html><body><p>No relevant board information.</p></body></html>
 """
 
 
-# ── Collector instance (with temp dir) ────────────────────────────────
+# ── Mock LLM extractions for testing ─────────────────────────────────
+
+MOCK_EXTRACTIONS = [
+    ChunkExtraction(directors=[
+        DirectorExtraction(
+            name="Dr. Jane Smith",
+            title="Chief Technology Officer",
+            committees=["Technology Committee", "Audit Committee"],
+            is_independent=True,
+            tenure_since_year=2018,
+            bio="Chief Technology Officer of Acme Corp with expertise in artificial intelligence and machine learning.",
+            evidence=["Expertise in artificial intelligence and machine learning"],
+        ),
+        DirectorExtraction(
+            name="John Doe",
+            title="Former President and CEO",
+            committees=["Compensation Committee", "Risk Committee"],
+            is_independent=True,
+            tenure_since_year=2015,
+            bio="Former President and CEO. Independent Director serving on Compensation and Risk Committees.",
+            evidence=[],
+        ),
+    ]),
+    ChunkExtraction(directors=[
+        DirectorExtraction(
+            name="Alice Johnson",
+            title="Chief Data Officer",
+            committees=["Audit Committee"],
+            is_independent=False,
+            tenure_since_year=2020,
+            bio="Chief Data Officer leading data science and analytics initiatives.",
+            evidence=[],
+        ),
+        DirectorExtraction(
+            name="Bob Williams",
+            title="Director",
+            committees=["Finance Committee"],
+            is_independent=False,
+            tenure_since_year=2019,
+            bio="Director with background in finance and operations.",
+            evidence=[],
+        ),
+        DirectorExtraction(
+            name="Carol Davis",
+            title="Director",
+            committees=["Risk Committee"],
+            is_independent=True,
+            tenure_since_year=2021,
+            bio="Independent Director with expertise in cybersecurity and digital strategy.",
+            evidence=[],
+        ),
+    ]),
+]
+
+
+# ── Stage 1: Collector Tests ─────────────────────────────────────────
 
 def _make_collector(tmp_dir=None):
     d = tmp_dir or tempfile.mkdtemp()
     return BoardCompositionCollector(data_dir=d)
 
 
-# ── HTML Parsing Tests ────────────────────────────────────────────────
-
-def test_parse_proxy_extracts_members():
-    """Members are extracted from a typical proxy table."""
+def test_collector_extracts_committees():
+    """Committee names are extracted from text."""
     collector = _make_collector()
-    data = collector.parse_proxy_html(SAMPLE_PROXY_HTML)
+    from bs4 import BeautifulSoup
+    from app.pipelines.document_chunker_s3 import normalize_ws
 
-    assert "members" in data
-    assert len(data["members"]) >= 3, f"Expected >=3 members, got {len(data['members'])}"
-    names = [m["name"] for m in data["members"]]
-    assert "Dr. Jane Smith" in names
-    print("PASS test_parse_proxy_extracts_members")
+    soup = BeautifulSoup(SAMPLE_PROXY_HTML, "html.parser")
+    for tag in soup(["script", "style", "meta", "link"]):
+        tag.decompose()
+    raw_text = normalize_ws(soup.get_text(separator="\n", strip=True))
+    text_lower = raw_text.lower()
 
-
-def test_parse_proxy_extracts_committees():
-    """Committee names are extracted from narrative text."""
-    collector = _make_collector()
-    data = collector.parse_proxy_html(SAMPLE_PROXY_HTML)
-
-    assert "committees" in data
-    committee_lower = [c.lower() for c in data["committees"]]
-    assert any("technology" in c for c in committee_lower), f"No technology committee found in {data['committees']}"
+    committees = collector._extract_committees(text_lower)
+    committee_lower = [c.lower() for c in committees]
+    assert any("technology" in c for c in committee_lower), f"No technology committee in {committees}"
     assert any("audit" in c for c in committee_lower)
-    print("PASS test_parse_proxy_extracts_committees")
+    print("PASS test_collector_extracts_committees")
 
 
-def test_parse_proxy_extracts_strategy_text():
+def test_collector_extracts_strategy_text():
     """Strategy passages mentioning AI/ML are extracted."""
     collector = _make_collector()
-    data = collector.parse_proxy_html(SAMPLE_PROXY_HTML)
+    from bs4 import BeautifulSoup
+    from app.pipelines.document_chunker_s3 import normalize_ws
 
-    assert "strategy_text" in data
-    assert "artificial intelligence" in data["strategy_text"]
-    print("PASS test_parse_proxy_extracts_strategy_text")
+    soup = BeautifulSoup(SAMPLE_PROXY_HTML, "html.parser")
+    for tag in soup(["script", "style", "meta", "link"]):
+        tag.decompose()
+    raw_text = normalize_ws(soup.get_text(separator="\n", strip=True))
+    text_lower = raw_text.lower()
 
+    strategy = collector._extract_strategy_text(text_lower)
+    assert "artificial intelligence" in strategy
+    print("PASS test_collector_extracts_strategy_text")
 
-def test_parse_proxy_independent_detection():
-    """Independent directors are flagged correctly."""
-    collector = _make_collector()
-    data = collector.parse_proxy_html(SAMPLE_PROXY_HTML)
-
-    independent_members = [m for m in data["members"] if m["is_independent"]]
-    assert len(independent_members) >= 2, f"Expected >=2 independent, got {len(independent_members)}"
-    print("PASS test_parse_proxy_independent_detection")
-
-
-def test_parse_proxy_tenure_extraction():
-    """Tenure years are extracted from 'since YYYY' patterns."""
-    collector = _make_collector()
-    data = collector.parse_proxy_html(SAMPLE_PROXY_HTML)
-
-    members_with_tenure = [m for m in data["members"] if m["tenure_years"] > 0]
-    assert len(members_with_tenure) >= 1, "Expected at least one member with tenure extracted"
-    print("PASS test_parse_proxy_tenure_extraction")
-
-
-def test_parse_proxy_member_committees():
-    """Per-member committee memberships are extracted."""
-    collector = _make_collector()
-    data = collector.parse_proxy_html(SAMPLE_PROXY_HTML)
-
-    jane = next((m for m in data["members"] if "Jane" in m["name"]), None)
-    assert jane is not None, "Dr. Jane Smith not found"
-    committee_lower = [c.lower() for c in jane["committees"]]
-    assert any("technology" in c for c in committee_lower), f"Expected technology committee in {jane['committees']}"
-    print("PASS test_parse_proxy_member_committees")
-
-
-def test_parse_empty_proxy():
-    """Empty/irrelevant HTML returns empty data without errors."""
-    collector = _make_collector()
-    data = collector.parse_proxy_html(EMPTY_PROXY_HTML)
-
-    assert data["members"] == []
-    assert data["strategy_text"] == ""
-    print("PASS test_parse_empty_proxy")
-
-
-def test_parse_minimal_proxy_bold_fallback():
-    """Bold-name fallback strategy finds directors when no table exists."""
-    collector = _make_collector()
-    data = collector.parse_proxy_html(MINIMAL_PROXY_HTML)
-
-    names = [m["name"] for m in data["members"]]
-    assert "Sarah Connor" in names or "James Kirk" in names, f"Expected bold-name extraction, got {names}"
-    print("PASS test_parse_minimal_proxy_bold_fallback")
-
-
-def test_parse_returns_all_expected_keys():
-    """Parsed data always contains members, committees, strategy_text."""
-    collector = _make_collector()
-    for html in [SAMPLE_PROXY_HTML, MINIMAL_PROXY_HTML, EMPTY_PROXY_HTML]:
-        data = collector.parse_proxy_html(html)
-        assert "members" in data
-        assert "committees" in data
-        assert "strategy_text" in data
-        for m in data["members"]:
-            assert "name" in m
-            assert "title" in m
-            assert "bio" in m
-            assert "is_independent" in m
-            assert "committees" in m
-            assert "tenure_years" in m
-    print("PASS test_parse_returns_all_expected_keys")
-
-
-# ── Cache Tests ───────────────────────────────────────────────────────
 
 def test_cache_round_trip():
-    """Data saved to cache can be loaded back identically."""
+    """Data saved to cache can be loaded back when members are present."""
     tmp = tempfile.mkdtemp()
     collector = BoardCompositionCollector(data_dir=tmp)
 
@@ -209,7 +181,7 @@ def test_cache_round_trip():
             {
                 "name": "Test Person",
                 "title": "Director",
-                "bio": "Some bio",
+                "bio": "Some biographical information about this person.",
                 "is_independent": True,
                 "committees": ["Audit Committee"],
                 "tenure_years": 5.0,
@@ -217,9 +189,10 @@ def test_cache_round_trip():
         ],
         "committees": ["Audit Committee", "Technology Committee"],
         "strategy_text": "artificial intelligence is key",
+        "source_meta": {},
     }
 
-    collector._cache_results("TST", original)
+    collector.cache_with_members("TST", original)
     loaded = collector.load_from_cache("TST")
 
     assert loaded is not None
@@ -237,31 +210,161 @@ def test_cache_miss_returns_none():
     print("PASS test_cache_miss_returns_none")
 
 
-def test_collect_uses_cache():
-    """collect_board_data returns cached data when use_cache=True."""
+def test_cache_without_members_returns_none():
+    """Cache without members triggers re-extraction."""
     tmp = tempfile.mkdtemp()
     collector = BoardCompositionCollector(data_dir=tmp)
 
-    cached_data = {
-        "members": [{"name": "Cached Person", "title": "Director",
-                      "bio": "", "is_independent": False,
-                      "committees": [], "tenure_years": 0.0}],
+    data = {
+        "members": [],
         "committees": [],
         "strategy_text": "",
     }
-    collector._cache_results("CACHE", cached_data)
-
-    result = collector.collect_board_data("CACHE", use_cache=True)
-    assert result["members"][0]["name"] == "Cached Person"
-    print("PASS test_collect_uses_cache")
+    collector._cache_results("TST", data)
+    assert collector.load_from_cache("TST") is None
+    print("PASS test_cache_without_members_returns_none")
 
 
-# ── Scoring Integration Tests ─────────────────────────────────────────
+# ── Stage 2: Chunker Tests ──────────────────────────────────────────
 
-def test_collector_output_feeds_analyzer():
-    """Parsed proxy data can be converted to BoardMember and scored."""
-    collector = _make_collector()
-    data = collector.parse_proxy_html(SAMPLE_PROXY_HTML)
+def test_chunk_proxy_text_produces_chunks():
+    """Chunking produces non-empty results for a long text."""
+    text = "This is a test sentence. " * 500
+    chunks = chunk_proxy_text(text)
+    assert len(chunks) > 0
+    for c in chunks:
+        assert "chunk_text" in c
+        assert "chunk_index" in c
+        assert len(c["chunk_text"]) > 0
+    print("PASS test_chunk_proxy_text_produces_chunks")
+
+
+def test_chunk_empty_text():
+    """Empty text returns no chunks."""
+    assert chunk_proxy_text("") == []
+    assert chunk_proxy_text("   ") == []
+    print("PASS test_chunk_empty_text")
+
+
+def test_garbage_chunk_filtering():
+    """Garbage chunks are identified correctly."""
+    assert _is_garbage_chunk("") is True
+    assert _is_garbage_chunk("short") is True
+    assert _is_garbage_chunk("12345 67890 " * 100) is True  # low alpha
+    assert _is_garbage_chunk("table of contents\n" + "x " * 100) is True
+    assert _is_garbage_chunk("This is a normal paragraph about board directors " * 5) is False
+    print("PASS test_garbage_chunk_filtering")
+
+
+# ── Stage 3-4: Extractor + Merge Tests ──────────────────────────────
+
+def test_merge_extractions_deduplicates():
+    """Duplicate directors across chunks are merged."""
+    extractions = [
+        ChunkExtraction(directors=[
+            DirectorExtraction(name="Jane Smith", bio="Short bio", is_independent=True),
+        ]),
+        ChunkExtraction(directors=[
+            DirectorExtraction(
+                name="Jane Smith",
+                bio="A much longer bio with more detail about her career.",
+                committees=["Audit Committee"],
+            ),
+        ]),
+    ]
+    members = merge_extractions(extractions)
+    assert len(members) == 1
+    assert members[0]["is_independent"] is True  # True overrides
+    assert "longer bio" in members[0]["bio"]  # longest bio wins
+    assert "Audit Committee" in members[0]["committees"]
+    print("PASS test_merge_extractions_deduplicates")
+
+
+def test_merge_extractions_multiple_directors():
+    """Multiple distinct directors are preserved."""
+    members = merge_extractions(MOCK_EXTRACTIONS)
+    assert len(members) == 5
+    names = [m["name"] for m in members]
+    assert "Dr. Jane Smith" in names
+    assert "John Doe" in names
+    assert "Alice Johnson" in names
+    print("PASS test_merge_extractions_multiple_directors")
+
+
+def test_merge_tenure_conversion():
+    """tenure_since_year is converted to tenure_years."""
+    members = merge_extractions(MOCK_EXTRACTIONS)
+    jane = next(m for m in members if "Jane" in m["name"])
+    assert jane["tenure_years"] > 0
+    assert "tenure_since_year" not in jane
+    print("PASS test_merge_tenure_conversion")
+
+
+def test_normalize_name():
+    """Name normalization handles suffixes and prefixes."""
+    assert _normalize_name("Dr. Jane Smith") == "jane smith"
+    assert _normalize_name("John Doe Jr.") == "john doe"
+    assert _normalize_name("  Alice  Johnson  III ") == "alice johnson"
+    assert _normalize_name("Mr. Bob Williams") == "bob williams"
+    print("PASS test_normalize_name")
+
+
+def test_merge_into_committees_union():
+    """Merging accumulates unique committees."""
+    existing = {"committees": ["Audit Committee"], "bio": "", "evidence": []}
+    new = DirectorExtraction(
+        name="Test",
+        committees=["Audit Committee", "Risk Committee"],
+    )
+    _merge_into(existing, new)
+    assert len(existing["committees"]) == 2
+    assert "Risk Committee" in existing["committees"]
+    print("PASS test_merge_into_committees_union")
+
+
+def test_merge_into_bio_longest():
+    """Merging keeps the longest bio."""
+    existing = {"bio": "Short", "committees": [], "evidence": []}
+    new = DirectorExtraction(name="Test", bio="This is a much longer biography.")
+    _merge_into(existing, new)
+    assert existing["bio"] == "This is a much longer biography."
+    print("PASS test_merge_into_bio_longest")
+
+
+def test_quality_check_pass():
+    """Quality check passes with enough good members."""
+    members = [
+        {"name": f"Director {i}", "bio": "x" * 60} for i in range(8)
+    ]
+    ok, reason = quality_check(members)
+    assert ok is True
+    assert reason == "ok"
+    print("PASS test_quality_check_pass")
+
+
+def test_quality_check_too_few():
+    """Quality check fails with too few members."""
+    members = [{"name": "A B", "bio": "x" * 60}]
+    ok, reason = quality_check(members)
+    assert ok is False
+    assert "too_few" in reason
+    print("PASS test_quality_check_too_few")
+
+
+def test_quality_check_low_bio():
+    """Quality check fails with low bio quality."""
+    members = [{"name": f"Director {i}", "bio": ""} for i in range(8)]
+    ok, reason = quality_check(members)
+    assert ok is False
+    assert "bio" in reason
+    print("PASS test_quality_check_low_bio")
+
+
+# ── Stage 5: Scoring Integration ────────────────────────────────────
+
+def test_mock_members_feed_analyzer():
+    """LLM-extracted members can be scored by BoardCompositionAnalyzer."""
+    members_raw = merge_extractions(MOCK_EXTRACTIONS)
 
     members = [
         BoardMember(
@@ -272,7 +375,7 @@ def test_collector_output_feeds_analyzer():
             is_independent=m.get("is_independent", False),
             tenure_years=m.get("tenure_years", 0.0),
         )
-        for m in data["members"]
+        for m in members_raw
     ]
 
     analyzer = BoardCompositionAnalyzer()
@@ -280,20 +383,19 @@ def test_collector_output_feeds_analyzer():
         company_id="test-id",
         ticker="TST",
         members=members,
-        committees=data["committees"],
-        strategy_text=data["strategy_text"],
+        committees=["Technology Committee", "Audit Committee", "Risk Management Committee"],
+        strategy_text="artificial intelligence is central to our strategy",
     )
 
     assert Decimal("0") <= signal.governance_score <= Decimal("100")
     assert Decimal("0") <= signal.confidence <= Decimal("0.95")
     assert signal.ticker == "TST"
-    print("PASS test_collector_output_feeds_analyzer")
+    print("PASS test_mock_members_feed_analyzer")
 
 
-def test_full_sample_scores_above_base():
-    """Rich proxy data should produce a score well above the base 20."""
-    collector = _make_collector()
-    data = collector.parse_proxy_html(SAMPLE_PROXY_HTML)
+def test_mock_members_score_above_base():
+    """Rich mock data should produce a score above the base 20."""
+    members_raw = merge_extractions(MOCK_EXTRACTIONS)
 
     members = [
         BoardMember(
@@ -304,7 +406,7 @@ def test_full_sample_scores_above_base():
             is_independent=m.get("is_independent", False),
             tenure_years=m.get("tenure_years", 0.0),
         )
-        for m in data["members"]
+        for m in members_raw
     ]
 
     analyzer = BoardCompositionAnalyzer()
@@ -312,53 +414,34 @@ def test_full_sample_scores_above_base():
         company_id="test-id",
         ticker="TST",
         members=members,
-        committees=data["committees"],
-        strategy_text=data["strategy_text"],
+        committees=["Technology Committee", "Risk Committee"],
+        strategy_text="artificial intelligence and machine learning",
     )
 
-    # Sample HTML has tech committee (+15), AI expertise (+20), data officer (+15),
-    # independent majority (+10), risk oversight (+10), AI strategy (+10)
-    # So score should be significantly above base 20
     assert signal.governance_score > Decimal("40"), (
-        f"Expected >40 from rich proxy, got {signal.governance_score}"
+        f"Expected >40, got {signal.governance_score}"
     )
-    print("PASS test_full_sample_scores_above_base")
+    print("PASS test_mock_members_score_above_base")
 
 
-def test_empty_proxy_scores_base_only():
-    """Empty proxy should produce only the base score of 20."""
-    collector = _make_collector()
-    data = collector.parse_proxy_html(EMPTY_PROXY_HTML)
-
-    members = [
-        BoardMember(
-            name=m["name"],
-            title=m.get("title", "Director"),
-            committees=m.get("committees", []),
-            bio=m.get("bio", ""),
-            is_independent=m.get("is_independent", False),
-            tenure_years=m.get("tenure_years", 0.0),
-        )
-        for m in data["members"]
-    ]
-
+def test_empty_members_score_base():
+    """Empty members should produce only the base score of 20."""
     analyzer = BoardCompositionAnalyzer()
     signal = analyzer.analyze_board(
         company_id="test-id",
         ticker="TST",
-        members=members,
-        committees=data["committees"],
-        strategy_text=data["strategy_text"],
+        members=[],
+        committees=[],
+        strategy_text="",
     )
 
     assert signal.governance_score == Decimal("20")
-    print("PASS test_empty_proxy_scores_base_only")
+    print("PASS test_empty_members_score_base")
 
 
 def test_signal_evidence_populated():
-    """The GovernanceSignal.evidence list is populated with descriptions."""
-    collector = _make_collector()
-    data = collector.parse_proxy_html(SAMPLE_PROXY_HTML)
+    """GovernanceSignal.evidence is populated with descriptions."""
+    members_raw = merge_extractions(MOCK_EXTRACTIONS)
 
     members = [
         BoardMember(
@@ -369,7 +452,7 @@ def test_signal_evidence_populated():
             is_independent=m.get("is_independent", False),
             tenure_years=m.get("tenure_years", 0.0),
         )
-        for m in data["members"]
+        for m in members_raw
     ]
 
     analyzer = BoardCompositionAnalyzer()
@@ -377,67 +460,43 @@ def test_signal_evidence_populated():
         company_id="test-id",
         ticker="TST",
         members=members,
-        committees=data["committees"],
-        strategy_text=data["strategy_text"],
+        committees=["Technology Committee"],
+        strategy_text="artificial intelligence",
     )
 
-    assert len(signal.evidence) > 0, "Expected evidence entries"
+    assert len(signal.evidence) > 0
     print("PASS test_signal_evidence_populated")
-
-
-# ── Helper method unit tests ──────────────────────────────────────────
-
-def test_guess_title():
-    collector = _make_collector()
-    assert "Chief Technology Officer" in collector._guess_title(
-        "She is the Chief Technology Officer of XYZ."
-    )
-    assert collector._guess_title("No title here at all") == "Director"
-    print("PASS test_guess_title")
-
-
-def test_extract_tenure():
-    collector = _make_collector()
-    assert collector._extract_tenure("Appointed since 2015") == 10.0
-    assert collector._extract_tenure("No date info") == 0.0
-    print("PASS test_extract_tenure")
-
-
-def test_extract_member_committees():
-    collector = _make_collector()
-    comms = collector._extract_member_committees(
-        "Member of Audit, Technology, and Risk committees"
-    )
-    comm_lower = [c.lower() for c in comms]
-    assert any("audit" in c for c in comm_lower)
-    assert any("technology" in c for c in comm_lower)
-    assert any("risk" in c for c in comm_lower)
-    print("PASS test_extract_member_committees")
 
 
 # ── Runner ────────────────────────────────────────────────────────────
 
 def main():
     tests = [
-        test_parse_proxy_extracts_members,
-        test_parse_proxy_extracts_committees,
-        test_parse_proxy_extracts_strategy_text,
-        test_parse_proxy_independent_detection,
-        test_parse_proxy_tenure_extraction,
-        test_parse_proxy_member_committees,
-        test_parse_empty_proxy,
-        test_parse_minimal_proxy_bold_fallback,
-        test_parse_returns_all_expected_keys,
+        # Stage 1
+        test_collector_extracts_committees,
+        test_collector_extracts_strategy_text,
         test_cache_round_trip,
         test_cache_miss_returns_none,
-        test_collect_uses_cache,
-        test_collector_output_feeds_analyzer,
-        test_full_sample_scores_above_base,
-        test_empty_proxy_scores_base_only,
+        test_cache_without_members_returns_none,
+        # Stage 2
+        test_chunk_proxy_text_produces_chunks,
+        test_chunk_empty_text,
+        test_garbage_chunk_filtering,
+        # Stage 3-4
+        test_merge_extractions_deduplicates,
+        test_merge_extractions_multiple_directors,
+        test_merge_tenure_conversion,
+        test_normalize_name,
+        test_merge_into_committees_union,
+        test_merge_into_bio_longest,
+        test_quality_check_pass,
+        test_quality_check_too_few,
+        test_quality_check_low_bio,
+        # Stage 5
+        test_mock_members_feed_analyzer,
+        test_mock_members_score_above_base,
+        test_empty_members_score_base,
         test_signal_evidence_populated,
-        test_guess_title,
-        test_extract_tenure,
-        test_extract_member_committees,
     ]
     passed = 0
     for t in tests:
