@@ -24,8 +24,8 @@ COMPANY_CIKS: Dict[str, str] = {
     "NVDA": "1045810",
     "JPM": "19617",
     "WMT": "104169",
-    "GE": "40554",
-    "DG": "34408",
+    "GE": "40545",
+    "DG": "29534",
 }
 
 # Polite EDGAR headers (required by SEC fair-access policy)
