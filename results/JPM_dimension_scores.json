@@ -3,36 +3,37 @@
   "dimensions": {
     "data_infrastructure": {
       "dimension": "data_infrastructure",
-      "score": 35.8408958183169,
+      "score": 35.11576719628572,
       "contributing_sources": [
-        "digital_presence",
         "Item 1A (Risk)",
+        "digital_presence",
         "innovation_activity"
       ],
-      "total_weight": 0.77875,
-      "confidence": 0.8573125
+      "total_weight": 1.0,
+      "confidence": 0.9686622
     },
     "ai_governance": {
       "dimension": "ai_governance",
-      "score": 52.76612665684831,
+      "score": 53.40897959122449,
       "contributing_sources": [
-        "leadership_signals",
-        "Item 1A (Risk)"
+        "Item 1A (Risk)",
+        "board_composition",
+        "leadership_signals"
       ],
-      "total_weight": 1.067,
-      "confidence": 0.63525
+      "total_weight": 1.75,
+      "confidence": 0.9747507375
     },
     "technology_stack": {
       "dimension": "technology_stack",
-      "score": 37.964884902294166,
+      "score": 38.355026455952384,
       "contributing_sources": [
+        "Item 1 (Business)",
         "digital_presence",
         "innovation_activity",
-        "Item 1 (Business)",
         "technology_hiring"
       ],
-      "total_weight": 1.073375,
-      "confidence": 0.81235
+      "total_weight": 1.4,
+      "confidence": 0.987680576
     },
     "talent": {
       "dimension": "talent",
@@ -40,38 +41,39 @@
       "contributing_sources": [
         "technology_hiring"
       ],
-      "total_weight": 0.476,
-      "confidence": 0.56
+      "total_weight": 0.7,
+      "confidence": 0.68
     },
     "leadership": {
       "dimension": "leadership",
-      "score": 45.12813990461049,
+      "score": 44.01503759263158,
       "contributing_sources": [
         "Item 8.01 (Events)",
+        "board_composition",
         "leadership_signals"
       ],
-      "total_weight": 0.6919,
-      "confidence": 0.56925
+      "total_weight": 1.9,
+      "confidence": 0.95837611
     },
     "use_case_portfolio": {
       "dimension": "use_case_portfolio",
-      "score": 48.39587070961128,
+      "score": 49.00666666744445,
       "contributing_sources": [
         "Item 1 (Business)",
         "innovation_activity"
       ],
-      "total_weight": 0.877875,
-      "confidence": 0.60375
+      "total_weight": 1.0,
+      "confidence": 0.88677
     },
     "culture": {
       "dimension": "culture",
-      "score": 38.842396313364056,
+      "score": 38.228571426,
       "contributing_sources": [
         "leadership_signals",
         "technology_hiring"
       ],
-      "total_weight": 0.1736,
-      "confidence": 0.756
+      "total_weight": 0.25,
+      "confidence": 0.90528
     }
   }
 }
