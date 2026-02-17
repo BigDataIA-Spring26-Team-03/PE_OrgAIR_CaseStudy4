@@ -1,22 +1,24 @@
 # src/scoring/evidence_mapper.py
 # Evidence sources → weighted contributions → 7 final dimension scores
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any, Optional, Tuple
 from enum import Enum
 from decimal import Decimal
 import logging
-from scoring.rubric_scorer import (
-    RubricScorer,
-    concatenate_evidence_chunks,
-    extract_quantitative_metrics
-)
+
+from .rubric_scorer import RubricScorer, concatenate_evidence_chunks
+
 logger = logging.getLogger(__name__)
 
+
+# ----------------------------
 # ENUMS & DATA MODELS
+# ----------------------------
 
 class Dimension(str, Enum):
-    """The 7 dimensions of organizational AI readiness."""
     DATA_INFRASTRUCTURE = "data_infrastructure"
     AI_GOVERNANCE = "ai_governance"
     TECHNOLOGY_STACK = "technology_stack"
@@ -27,87 +29,77 @@ class Dimension(str, Enum):
 
 
 class SignalSource(str, Enum):
-    """Evidence sources from CS2 and CS3."""
-    
-    # CS2 External Signals (from external_signals table)
+    # CS2 External Signals (from external_signals.category)
     TECHNOLOGY_HIRING = "technology_hiring"
     INNOVATION_ACTIVITY = "innovation_activity"
     DIGITAL_PRESENCE = "digital_presence"
     LEADERSHIP_SIGNALS = "leadership_signals"
-    
-    # CS2 SEC Sections (from document_chunks_sec.section column)
+
+    # CS2 SEC Sections (from document_chunks_sec.section)
     SEC_ITEM_1 = "Item 1 (Business)"
     SEC_ITEM_1A = "Item 1A (Risk)"
     SEC_ITEM_7 = "Item 7 (MD&A)"
     SEC_ITEM_2 = "Item 2 (MD&A)"
     SEC_ITEM_8_01 = "Item 8.01 (Events)"
-    
+
     # CS3 New Sources
-    GLASSDOOR_REVIEWS = "glassdoor_reviews"
-    BOARD_COMPOSITION = "board_composition"
+    GLASSDOOR_REVIEWS = "glassdoor_reviews"      # aggregated culture_signals
+    BOARD_COMPOSITION = "board_composition"      # board_governance_signals
 
 
-@dataclass
-# Describes how one source contributes to mapping
+@dataclass(frozen=True)
 class DimensionMapping:
     source: SignalSource
     primary_dimension: Dimension
     primary_weight: Decimal
     secondary_mappings: Dict[Dimension, Decimal] = field(default_factory=dict)
     reliability: Decimal = Decimal("0.8")  # Source reliability (0-1)
-    
+
     def __post_init__(self):
-        """Validate that weights sum to 1.0."""
-        total_weight = self.primary_weight + sum(self.secondary_mappings.values())
-        if abs(total_weight - Decimal("1.0")) > Decimal("0.001"):
-            raise ValueError(
-                f"Weights for {self.source.value} must sum to 1.0, got {total_weight}"
-            )
+        total = self.primary_weight + sum(self.secondary_mappings.values())
+        if abs(total - Decimal("1.0")) > Decimal("0.001"):
+            raise ValueError(f"Weights for {self.source.value} must sum to 1.0, got {total}")
 
 
-@dataclass
-# Score from a single evidence source Eg: All Item 1 chunks, ALL job postings
+@dataclass(frozen=True)
 class EvidenceScore:
     source: SignalSource
-    raw_score: Decimal  # 0-100
-    confidence: Decimal  # 0-1
-    evidence_count: int  # Number of data points
+    raw_score: Decimal      # 0-100
+    confidence: Decimal     # 0-1
+    evidence_count: int
     metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     def __post_init__(self):
-        """Validate score and confidence bounds."""
         if not (Decimal("0") <= self.raw_score <= Decimal("100")):
-            raise ValueError(f"raw_score must be in [0, 100], got {self.raw_score}")
+            raise ValueError(f"raw_score must be in [0,100], got {self.raw_score}")
         if not (Decimal("0") <= self.confidence <= Decimal("1")):
-            raise ValueError(f"confidence must be in [0, 1], got {self.confidence}")
+            raise ValueError(f"confidence must be in [0,1], got {self.confidence}")
 
 
-@dataclass
-# Final score per dimension
+@dataclass(frozen=True)
 class DimensionScore:
     dimension: Dimension
-    score: Decimal  # Final weighted score (0-100)
+    score: Decimal
     contributing_sources: List[SignalSource]
     total_weight: Decimal
     confidence: Decimal
-    
+
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization."""
         return {
             "dimension": self.dimension.value,
             "score": float(self.score),
             "contributing_sources": [s.value for s in self.contributing_sources],
             "total_weight": float(self.total_weight),
-            "confidence": float(self.confidence)
+            "confidence": float(self.confidence),
         }
 
 
-# THE CRITICAL MAPPING TABLE
+# ----------------------------
+# SIGNAL → DIMENSION MAPPING
+# ----------------------------
 
 SIGNAL_TO_DIMENSION_MAP: Dict[SignalSource, DimensionMapping] = {
-    
     # CS2 External Signals
-    
     SignalSource.TECHNOLOGY_HIRING: DimensionMapping(
         source=SignalSource.TECHNOLOGY_HIRING,
         primary_dimension=Dimension.TALENT,
@@ -118,7 +110,6 @@ SIGNAL_TO_DIMENSION_MAP: Dict[SignalSource, DimensionMapping] = {
         },
         reliability=Decimal("0.85"),
     ),
-    
     SignalSource.INNOVATION_ACTIVITY: DimensionMapping(
         source=SignalSource.INNOVATION_ACTIVITY,
         primary_dimension=Dimension.TECHNOLOGY_STACK,
@@ -129,7 +120,6 @@ SIGNAL_TO_DIMENSION_MAP: Dict[SignalSource, DimensionMapping] = {
         },
         reliability=Decimal("0.80"),
     ),
-    
     SignalSource.DIGITAL_PRESENCE: DimensionMapping(
         source=SignalSource.DIGITAL_PRESENCE,
         primary_dimension=Dimension.DATA_INFRASTRUCTURE,
@@ -139,7 +129,6 @@ SIGNAL_TO_DIMENSION_MAP: Dict[SignalSource, DimensionMapping] = {
         },
         reliability=Decimal("0.75"),
     ),
-    
     SignalSource.LEADERSHIP_SIGNALS: DimensionMapping(
         source=SignalSource.LEADERSHIP_SIGNALS,
         primary_dimension=Dimension.LEADERSHIP,
@@ -150,10 +139,8 @@ SIGNAL_TO_DIMENSION_MAP: Dict[SignalSource, DimensionMapping] = {
         },
         reliability=Decimal("0.80"),
     ),
-    
+
     # CS2 SEC Sections
-    # ----------------
-    
     SignalSource.SEC_ITEM_1: DimensionMapping(
         source=SignalSource.SEC_ITEM_1,
         primary_dimension=Dimension.USE_CASE_PORTFOLIO,
@@ -163,7 +150,6 @@ SIGNAL_TO_DIMENSION_MAP: Dict[SignalSource, DimensionMapping] = {
         },
         reliability=Decimal("0.90"),
     ),
-    
     SignalSource.SEC_ITEM_1A: DimensionMapping(
         source=SignalSource.SEC_ITEM_1A,
         primary_dimension=Dimension.AI_GOVERNANCE,
@@ -173,7 +159,6 @@ SIGNAL_TO_DIMENSION_MAP: Dict[SignalSource, DimensionMapping] = {
         },
         reliability=Decimal("0.90"),
     ),
-    
     SignalSource.SEC_ITEM_7: DimensionMapping(
         source=SignalSource.SEC_ITEM_7,
         primary_dimension=Dimension.LEADERSHIP,
@@ -184,7 +169,6 @@ SIGNAL_TO_DIMENSION_MAP: Dict[SignalSource, DimensionMapping] = {
         },
         reliability=Decimal("0.85"),
     ),
-    
     SignalSource.SEC_ITEM_2: DimensionMapping(
         source=SignalSource.SEC_ITEM_2,
         primary_dimension=Dimension.LEADERSHIP,
@@ -195,7 +179,6 @@ SIGNAL_TO_DIMENSION_MAP: Dict[SignalSource, DimensionMapping] = {
         },
         reliability=Decimal("0.85"),
     ),
-    
     SignalSource.SEC_ITEM_8_01: DimensionMapping(
         source=SignalSource.SEC_ITEM_8_01,
         primary_dimension=Dimension.LEADERSHIP,
@@ -203,9 +186,8 @@ SIGNAL_TO_DIMENSION_MAP: Dict[SignalSource, DimensionMapping] = {
         secondary_mappings={},
         reliability=Decimal("0.70"),
     ),
-    
+
     # CS3 New Sources
-    
     SignalSource.GLASSDOOR_REVIEWS: DimensionMapping(
         source=SignalSource.GLASSDOOR_REVIEWS,
         primary_dimension=Dimension.CULTURE,
@@ -216,7 +198,6 @@ SIGNAL_TO_DIMENSION_MAP: Dict[SignalSource, DimensionMapping] = {
         },
         reliability=Decimal("0.70"),
     ),
-    
     SignalSource.BOARD_COMPOSITION: DimensionMapping(
         source=SignalSource.BOARD_COMPOSITION,
         primary_dimension=Dimension.AI_GOVERNANCE,
@@ -229,497 +210,417 @@ SIGNAL_TO_DIMENSION_MAP: Dict[SignalSource, DimensionMapping] = {
 }
 
 
-# EVIDENCE MAPPER CLASS
-# Maps CS2 evidence to 7 V^R dimensions.
+# ----------------------------
+# CORE MAPPER
+# ----------------------------
+
+def _clamp_0_100(x: Decimal) -> Decimal:
+    return max(Decimal("0"), min(Decimal("100"), x))
+
+def _clamp_0_1(x: Decimal) -> Decimal:
+    return max(Decimal("0"), min(Decimal("1"), x))
+
+
 class EvidenceMapper:
-    
+    """
+    Maps EvidenceScore objects (per source) into 7 aggregated DimensionScore objects.
+    """
+
+    DEFAULT_SCORE = Decimal("50")
+    DEFAULT_CONFIDENCE = Decimal("0.00")
+
     def __init__(self):
-        """Initialize with mapping table."""
         self.mappings = SIGNAL_TO_DIMENSION_MAP
-        logger.info(
-            "EvidenceMapper initialized",
-            signal_sources=len(self.mappings),
-            dimensions=len(Dimension)
-        )
-    
-    def map_evidence_to_dimensions(
-        self,
-        evidence_scores: List[EvidenceScore]
-    ) -> Dict[Dimension, DimensionScore]:
-        
+        logger.info("EvidenceMapper initialized", signal_sources=len(self.mappings))
+
+    def map_evidence_to_dimensions(self, evidence_scores: List[EvidenceScore]) -> Dict[Dimension, DimensionScore]:
         if not evidence_scores:
-            logger.warning("No evidence scores provided, returning defaults")
             return self._default_dimension_scores()
-        
-        # Initialize accumulators for each dimension
-        dimension_sums: Dict[Dimension, Decimal] = {
-            dim: Decimal("0") for dim in Dimension
-        }
-        dimension_weights: Dict[Dimension, Decimal] = {
-            dim: Decimal("0") for dim in Dimension
-        }
-        dimension_sources: Dict[Dimension, List[SignalSource]] = {
-            dim: [] for dim in Dimension
-        }
-        dimension_confidences: Dict[Dimension, List[Decimal]] = {
-            dim: [] for dim in Dimension
-        }
-        
-        # Process each evidence score
+
+        # Accumulators
+        sum_weighted: Dict[Dimension, Decimal] = {d: Decimal("0") for d in Dimension}
+        sum_weights: Dict[Dimension, Decimal] = {d: Decimal("0") for d in Dimension}
+        sources: Dict[Dimension, List[SignalSource]] = {d: [] for d in Dimension}
+
+        # For monotonic confidence aggregation:
+        # conf = 1 - Π(1 - effective_conf_i)
+        conf_complements: Dict[Dimension, List[Decimal]] = {d: [] for d in Dimension}
+
         for ev in evidence_scores:
-            # Look up mapping
             mapping = self.mappings.get(ev.source)
             if not mapping:
-                logger.warning(f"No mapping found for source: {ev.source.value}")
+                logger.debug("Skipping unmapped source", source=ev.source.value)
                 continue
-            
-            # Weight by confidence and reliability
-            effective_score = ev.raw_score * ev.confidence * mapping.reliability # Influence 
-            effective_weight = ev.confidence * mapping.reliability
-            
-            # Primary contribution
-            dim = mapping.primary_dimension
-            weight = mapping.primary_weight
-            dimension_sums[dim] += effective_score * weight
-            dimension_weights[dim] += weight * effective_weight
-            dimension_sources[dim].append(ev.source)
-            dimension_confidences[dim].append(ev.confidence)
-            
-            # Secondary contributions
-            for dim, weight in mapping.secondary_mappings.items():
-                dimension_sums[dim] += effective_score * weight
-                dimension_weights[dim] += weight * effective_weight
-                dimension_sources[dim].append(ev.source)
-                dimension_confidences[dim].append(ev.confidence)
-        
-        # Calculate weighted averages and create DimensionScore objects
-        dimension_scores = {}
-        
+
+            # Effective confidence includes source reliability
+            effective_conf = _clamp_0_1(ev.confidence * mapping.reliability)
+
+            # Effective score (0–100), already normalized from collectors/scorers
+            effective_score = _clamp_0_100(ev.raw_score)
+
+            # Primary
+            dim_primary = mapping.primary_dimension
+            w_primary = mapping.primary_weight
+            sum_weighted[dim_primary] += effective_score * w_primary
+            sum_weights[dim_primary] += w_primary
+            sources[dim_primary].append(ev.source)
+            conf_complements[dim_primary].append(Decimal("1") - effective_conf)
+
+            # Secondary
+            for dim, w in mapping.secondary_mappings.items():
+                sum_weighted[dim] += effective_score * w
+                sum_weights[dim] += w
+                sources[dim].append(ev.source)
+                conf_complements[dim].append(Decimal("1") - effective_conf)
+
+        out: Dict[Dimension, DimensionScore] = {}
+
         for dim in Dimension:
-            total_weight = dimension_weights[dim]
-            
-            if total_weight == 0:
-                # No evidence for this dimension - use default
-                logger.warning(f"No evidence for dimension: {dim.value}")
-                score = Decimal("50")
-                confidence = Decimal("0.1")
-                sources = []
-            else:
-                # Weighted average
-                score = dimension_sums[dim] / total_weight
-                
-                # Clamp to [0, 100]
-                score = max(Decimal("0"), min(Decimal("100"), score))
-                
-                # Average confidence across sources
-                confidences = dimension_confidences[dim]
-                confidence = sum(confidences) / len(confidences) if confidences else Decimal("0.1")
-                
-                # Adjust confidence based on number of unique sources
-                unique_sources = list(set(dimension_sources[dim]))
-                source_count = len(unique_sources)
-                
-                if source_count == 1:
-                    confidence *= Decimal("0.7")  # Penalize single source
-                elif source_count == 2:
-                    confidence *= Decimal("0.9")  # Slight penalty
-                elif source_count >= 3:
-                    confidence *= Decimal("1.1")  # Boost multiple sources
-                
-                # Clamp confidence to [0, 1]
-                confidence = max(Decimal("0"), min(Decimal("1"), confidence))
-                
-                sources = unique_sources
-            
-            dimension_scores[dim] = DimensionScore(
+            if sum_weights[dim] == 0:
+                out[dim] = DimensionScore(
+                    dimension=dim,
+                    score=self.DEFAULT_SCORE,
+                    contributing_sources=[],
+                    total_weight=Decimal("0"),
+                    confidence=self.DEFAULT_CONFIDENCE,
+                )
+                continue
+
+            # Weighted average for that dimension (weights within each source mapping sum to 1)
+            score = _clamp_0_100(sum_weighted[dim] / sum_weights[dim])
+
+            unique_sources = sorted(set(sources[dim]), key=lambda s: s.value)
+
+            # Monotonic confidence: 1 - product(1 - effective_conf_i)
+            comp = conf_complements[dim]
+            prod = Decimal("1")
+            for c in comp:
+                prod *= _clamp_0_1(c)
+            confidence = _clamp_0_1(Decimal("1") - prod)
+
+            out[dim] = DimensionScore(
                 dimension=dim,
                 score=score,
-                contributing_sources=sources,
-                total_weight=total_weight,
-                confidence=confidence
+                contributing_sources=list(unique_sources),
+                total_weight=sum_weights[dim],
+                confidence=confidence,
             )
-        
-        logger.info(
-            "Evidence mapping complete",
-            input_evidence_count=len(evidence_scores),
-            dimensions_with_evidence=sum(1 for ds in dimension_scores.values() if len(ds.contributing_sources) > 0)
-        )
-        
-        return dimension_scores
-    
+
+        return out
+
     def _default_dimension_scores(self) -> Dict[Dimension, DimensionScore]:
-        """Return default scores when no evidence is available."""
         return {
             dim: DimensionScore(
                 dimension=dim,
-                score=Decimal("50"),
+                score=self.DEFAULT_SCORE,
                 contributing_sources=[],
                 total_weight=Decimal("0"),
-                confidence=Decimal("0.1")
+                confidence=self.DEFAULT_CONFIDENCE,
             )
             for dim in Dimension
         }
-    
-    # Report which dimensions have evidence and which have gaps.
-    def get_coverage_report(
-        self,
-        evidence_scores: List[EvidenceScore]
-    ) -> Dict[str, Any]:
-        dimension_scores = self.map_evidence_to_dimensions(evidence_scores)
-        
+
+    def get_coverage_report(self, evidence_scores: List[EvidenceScore]) -> Dict[str, Any]:
+        dim_scores = self.map_evidence_to_dimensions(evidence_scores)
+
         report = {
             "total_dimensions": len(Dimension),
             "dimensions_with_evidence": 0,
             "dimensions_without_evidence": [],
-            "coverage_by_dimension": {}
+            "coverage_by_dimension": {},
         }
-        
-        for dim, score in dimension_scores.items():
-            has_evidence = len(score.contributing_sources) > 0
-            
+
+        for dim, ds in dim_scores.items():
+            has_evidence = len(ds.contributing_sources) > 0
             if has_evidence:
                 report["dimensions_with_evidence"] += 1
             else:
                 report["dimensions_without_evidence"].append(dim.value)
-            
+
             report["coverage_by_dimension"][dim.value] = {
                 "has_evidence": has_evidence,
-                "source_count": len(score.contributing_sources),
-                "sources": [s.value for s in score.contributing_sources],
-                "total_weight": float(score.total_weight),
-                "confidence": float(score.confidence),
-                "score": float(score.score)
+                "source_count": len(ds.contributing_sources),
+                "sources": [s.value for s in ds.contributing_sources],
+                "total_weight": float(ds.total_weight),
+                "confidence": float(ds.confidence),
+                "score": float(ds.score),
             }
-        
-        report["coverage_percentage"] = (
-            report["dimensions_with_evidence"] / report["total_dimensions"] * 100
-        )
-        
+
+        report["coverage_percentage"] = report["dimensions_with_evidence"] / report["total_dimensions"] * 100
         return report
 
 
-# SNOWFLAKE DATA LOADING FUNCTIONS
+# ----------------------------
+# SNOWFLAKE LOADERS
+# ----------------------------
+
+def _get(row: Dict[str, Any], *keys: str) -> Any:
+    for k in keys:
+        if k in row and row[k] is not None:
+            return row[k]
+    return None
 
 
-# Aggregates chunks by section and converts to EvidenceScore objects
-# Load SEC document chunks from Snowflake and score using rubrics
-def load_sec_evidence_from_snowflake_with_rubrics(
-    ticker: str,
-    snowflake_service
-) -> List[EvidenceScore]:
-    # Initialize rubric scorer
-    scorer = RubricScorer()
-    
-    # Load all chunks grouped by section
-    query = """
-        SELECT 
-            c.section,
-            c.content,
-            c.word_count,
-            COUNT(*) OVER (PARTITION BY c.section) as section_chunk_count
-        FROM document_chunks_sec c
-        JOIN documents_sec d ON c.document_id = d.id
-        WHERE d.ticker = %(ticker)s
-        AND c.section IS NOT NULL
-        AND c.section != 'Unknown'
-        AND c.section != 'Intro'
-        ORDER BY c.section, c.chunk_index
+def load_external_signals_from_snowflake(ticker: str, snowflake_service) -> List[EvidenceScore]:
     """
-    
-    try:
-        results = snowflake_service.execute_query(query, {'ticker': ticker.upper()})
-    except Exception as e:
-        logger.error(f"Failed to load SEC evidence for {ticker}: {e}")
-        return []
-    
-    if not results:
-        logger.info(f"No SEC evidence found for {ticker}")
-        return []
-    
-    # Group chunks by section
-    chunks_by_section = {}
-    for row in results:
-        section = row['section']
-        content = row['content']
-        
-        if section not in chunks_by_section:
-            chunks_by_section[section] = []
-        
-        chunks_by_section[section].append(content)
-    
-    # Map sections to dimensions and score with rubrics
-    evidence_scores = []
-    
-    for section, chunks in chunks_by_section.items():
-        # Map section to SignalSource
-        try:
-            source = SignalSource(section)
-        except ValueError:
-            logger.warning(f"Unknown section type: {section}")
-            continue
-        
-        # Determine which dimensions this section contributes to
-        mapping = SIGNAL_TO_DIMENSION_MAP.get(source)
-        if not mapping:
-            logger.warning(f"No dimension mapping for section: {section}")
-            continue
-        
-        # Get all dimensions this section maps to
-        dimensions = [mapping.primary_dimension]
-        dimensions.extend(mapping.secondary_mappings.keys())
-        
-        # Concatenate chunks for analysis
-        concatenated_text = concatenate_evidence_chunks(chunks)
-        
-        # Score each dimension using rubrics
-        for dimension in dimensions:
-            # Extract any quantitative metrics from metadata
-            # (In practice, you'd get these from your CS2 external signals)
-            metrics = {}
-            
-            # Score using rubric
-            rubric_result = scorer.score_dimension(
-                dimension.value,
-                concatenated_text,
-                metrics
-            )
-            
-            # Determine weight based on primary vs secondary
-            if dimension == mapping.primary_dimension:
-                weight_factor = mapping.primary_weight
-            else:
-                weight_factor = mapping.secondary_mappings[dimension]
-            
-            # Create EvidenceScore with rubric-based score
-            # Weight the rubric score by the mapping weight
-            weighted_score = rubric_result.score * Decimal(str(float(weight_factor)))
-            
-            # Adjust confidence based on source reliability
-            adjusted_confidence = rubric_result.confidence * mapping.reliability
-            
-            evidence_scores.append(EvidenceScore(
-                source=source,
-                raw_score=rubric_result.score,  # Keep original rubric score
-                confidence=adjusted_confidence,
-                evidence_count=len(chunks),
-                metadata={
-                    'ticker': ticker,
-                    'section': section,
-                    'dimension': dimension.value,
-                    'rubric_level': rubric_result.level.label,
-                    'matched_keywords': rubric_result.matched_keywords[:5],
-                    'weight_factor': float(weight_factor)
-                }
-            ))
-    
-    logger.info(f"Loaded and scored {len(evidence_scores)} evidence items for {ticker} using rubrics")
-    return evidence_scores
-
-
-# Aggregates signals by category and converts to EvidenceScore objects
-def load_external_signals_from_snowflake(
-    ticker: str,
-    snowflake_service
-) -> List[EvidenceScore]:
-    query = """
-        SELECT 
+    DDL aligned: external_signals(category, normalized_score, confidence, company_id)
+    """
+    q = """
+        SELECT
             es.category,
-            AVG(es.normalized_score) as avg_score,
-            AVG(es.confidence) as avg_confidence,
-            COUNT(*) as signal_count
+            AVG(es.normalized_score) AS avg_score,
+            AVG(es.confidence)       AS avg_confidence,
+            COUNT(*)                 AS signal_count
         FROM external_signals es
         JOIN companies c ON es.company_id = c.id
-        WHERE c.ticker = %(ticker)s
+        WHERE UPPER(c.ticker) = UPPER(%(ticker)s)
         GROUP BY es.category
     """
-    
     try:
-        results = snowflake_service.execute_query(query, {'ticker': ticker.upper()})
+        rows = snowflake_service.execute_query(q, {"ticker": ticker})
     except Exception as e:
-        logger.warning(f"Could not load external signals for {ticker}: {e}")
+        logger.warning("Could not load external_signals", ticker=ticker, err=str(e))
         return []
-    
-    evidence_scores = []
-    
-    for row in results:
-        category = row['category']
-        avg_score = row['avg_score']
-        avg_conf = row['avg_confidence']
-        count = row['signal_count']
-        
-        # Map category to SignalSource
-        try:
-            source = SignalSource(category)
-        except ValueError:
-            logger.warning(f"Unknown signal category: {category}")
+
+    out: List[EvidenceScore] = []
+    for r in rows or []:
+        category = _get(r, "CATEGORY", "category")
+        if not category:
             continue
-        
-        # Use the pre-computed normalized score
-        raw_score = Decimal(str(avg_score)) if avg_score else Decimal("50")
-        confidence = Decimal(str(avg_conf)) if avg_conf else Decimal("0.5")
-        
-        # Boost confidence if we have many signals
-        if count >= 10:
-            confidence *= Decimal("1.1")
-        confidence = min(Decimal("1.0"), confidence)
-        
-        evidence_scores.append(EvidenceScore(
-            source=source,
-            raw_score=raw_score,
-            confidence=confidence,
-            evidence_count=count,
-            metadata={
-                'ticker': ticker,
-                'category': category
-            }
-        ))
-    
-    logger.info(f"Loaded {len(evidence_scores)} external signal sources for {ticker}")
-    return evidence_scores
+
+        try:
+            source = SignalSource(str(category))
+        except ValueError:
+            logger.debug("Skipping unknown category", category=category)
+            continue
+
+        raw = _get(r, "AVG_SCORE", "avg_score")
+        conf = _get(r, "AVG_CONFIDENCE", "avg_confidence")
+        cnt = _get(r, "SIGNAL_COUNT", "signal_count") or 0
+
+        raw_score = _clamp_0_100(Decimal(str(raw)) if raw is not None else Decimal("50"))
+        confidence = _clamp_0_1(Decimal(str(conf)) if conf is not None else Decimal("0.50"))
+
+        # optional: boost confidence if we have lots of signals (monotonic + bounded)
+        if int(cnt) >= 10:
+            confidence = _clamp_0_1(confidence * Decimal("1.10"))
+
+        out.append(
+            EvidenceScore(
+                source=source,
+                raw_score=raw_score,
+                confidence=confidence,
+                evidence_count=int(cnt),
+                metadata={"ticker": ticker, "category": category, "signal_count": int(cnt)},
+            )
+        )
+
+    return out
 
 
-def load_culture_evidence_from_snowflake(
-    ticker: str,
-    snowflake_service
-) -> List[EvidenceScore]:
-    # Adjust table/column names based on your culture collector schema
-    query = """
-        SELECT 
-            AVG(overall_rating) as avg_rating,
-            AVG(culture_rating) as avg_culture,
-            COUNT(*) as review_count
-        FROM glassdoor_reviews
-        WHERE ticker = %(ticker)s
+def load_culture_evidence_from_snowflake(ticker: str, snowflake_service) -> List[EvidenceScore]:
     """
-    
-    try:
-        results = snowflake_service.execute_query(query, {'ticker': ticker.upper()})
-        
-        if not results or not results[0]['REVIEW_COUNT']:
-            logger.info(f"No culture data found for {ticker}")
-            return []
-        
-        row = results[0]
-        avg_rating = row['avg_rating']
-        avg_culture = row['avg_culture']
-        count = row['review_count']
-        
-        # Use culture rating if available, otherwise overall rating
-        rating = avg_culture if avg_culture else avg_rating
-        
-        if not rating:
-            return []
-        
-        # Convert 1-5 rating to 0-100 score
-        raw_score = (Decimal(str(rating)) - Decimal("1")) / Decimal("4") * Decimal("100")
-        
-        # Confidence based on number of reviews
-        confidence = min(Decimal("0.90"), Decimal(str(count)) / Decimal("100"))
-        confidence = max(Decimal("0.3"), confidence)
-        
-        evidence_scores = [EvidenceScore(
-            source=SignalSource.GLASSDOOR_REVIEWS,
-            raw_score=raw_score,
-            confidence=confidence,
-            evidence_count=count,
-            metadata={
-                'ticker': ticker,
-                'avg_rating': float(rating),
-                'review_count': count
-            }
-        )]
-        
-        logger.info(f"Loaded culture evidence for {ticker}")
-        return evidence_scores
-        
-    except Exception as e:
-        logger.warning(f"Could not load culture signals for {ticker}: {e}")
-        return []
-
-
-def load_board_evidence_from_snowflake(
-    ticker: str,
-    snowflake_service
-) -> List[EvidenceScore]:
-    """Load board governance signals from Snowflake as EvidenceScore."""
-    query = """
+    Uses CS3 DDL: culture_signals (aggregated table)
+    """
+    q = """
         SELECT
-            governance_score,
-            confidence
-        FROM board_governance_signals
-        WHERE ticker = %(ticker)s
+            overall_score,
+            confidence,
+            review_count,
+            avg_rating,
+            current_employee_ratio,
+            created_at
+        FROM culture_signals
+        WHERE UPPER(ticker) = UPPER(%(ticker)s)
         ORDER BY created_at DESC
         LIMIT 1
     """
-
     try:
-        results = snowflake_service.execute_query(query, {'ticker': ticker.upper()})
-
-        if not results:
-            logger.info(f"No board governance data found for {ticker}")
-            return []
-
-        row = results[0]
-        governance_score = row.get('governance_score') or row.get('GOVERNANCE_SCORE')
-        confidence = row.get('confidence') or row.get('CONFIDENCE')
-
-        if governance_score is None:
-            return []
-
-        evidence_scores = [EvidenceScore(
-            source=SignalSource.BOARD_COMPOSITION,
-            raw_score=Decimal(str(governance_score)),
-            confidence=Decimal(str(confidence)),
-            evidence_count=1,
-            metadata={
-                'ticker': ticker,
-                'governance_score': float(governance_score),
-            }
-        )]
-
-        logger.info(f"Loaded board governance evidence for {ticker}")
-        return evidence_scores
-
+        rows = snowflake_service.execute_query(q, {"ticker": ticker})
     except Exception as e:
-        logger.warning(f"Could not load board governance signals for {ticker}: {e}")
+        logger.warning("Could not load culture_signals", ticker=ticker, err=str(e))
         return []
 
+    if not rows:
+        return []
 
-def load_all_evidence_from_snowflake(
-    ticker: str,
-    snowflake_service
-) -> List[EvidenceScore]:
-    logger.info(f"Loading all evidence for {ticker}")
+    r = rows[0]
+    overall = _get(r, "OVERALL_SCORE", "overall_score")
+    conf = _get(r, "CONFIDENCE", "confidence")
+    rcnt = _get(r, "REVIEW_COUNT", "review_count") or 0
 
-    evidence_scores = []
+    if overall is None:
+        return []
 
-    # Load SEC evidence
-    sec_evidence = load_sec_evidence_from_snowflake_with_rubrics(ticker, snowflake_service)
-    evidence_scores.extend(sec_evidence)
-    logger.info(f"  ✓ {len(sec_evidence)} SEC sources")
-
-    # Load external signals
-    external_evidence = load_external_signals_from_snowflake(ticker, snowflake_service)
-    evidence_scores.extend(external_evidence)
-    logger.info(f"  ✓ {len(external_evidence)} external signal sources")
-
-    # Load culture signals
-    culture_evidence = load_culture_evidence_from_snowflake(ticker, snowflake_service)
-    evidence_scores.extend(culture_evidence)
-    logger.info(f"  ✓ {len(culture_evidence)} culture sources")
-
-    # Load board governance signals
-    board_evidence = load_board_evidence_from_snowflake(ticker, snowflake_service)
-    evidence_scores.extend(board_evidence)
-    logger.info(f"  ✓ {len(board_evidence)} board governance sources")
-
-    logger.info(f"Total evidence sources for {ticker}: {len(evidence_scores)}")
-
-    return evidence_scores
+    return [
+        EvidenceScore(
+            source=SignalSource.GLASSDOOR_REVIEWS,
+            raw_score=_clamp_0_100(Decimal(str(overall))),
+            confidence=_clamp_0_1(Decimal(str(conf)) if conf is not None else Decimal("0.50")),
+            evidence_count=int(rcnt),
+            metadata={
+                "ticker": ticker,
+                "avg_rating": float(_get(r, "AVG_RATING", "avg_rating") or 0),
+                "current_employee_ratio": float(_get(r, "CURRENT_EMPLOYEE_RATIO", "current_employee_ratio") or 0),
+            },
+        )
+    ]
 
 
-# Convenience function
+def load_board_evidence_from_snowflake(ticker: str, snowflake_service) -> List[EvidenceScore]:
+    """
+    Uses CS3 DDL: board_governance_signals (aggregated table)
+    """
+    q = """
+        SELECT
+            governance_score,
+            confidence,
+            has_tech_committee,
+            has_ai_expertise,
+            has_data_officer,
+            has_independent_majority,
+            has_risk_tech_oversight,
+            has_ai_strategy,
+            ai_experts,
+            evidence,
+            created_at
+        FROM board_governance_signals
+        WHERE UPPER(ticker) = UPPER(%(ticker)s)
+        ORDER BY created_at DESC
+        LIMIT 1
+    """
+    try:
+        rows = snowflake_service.execute_query(q, {"ticker": ticker})
+    except Exception as e:
+        logger.warning("Could not load board_governance_signals", ticker=ticker, err=str(e))
+        return []
+
+    if not rows:
+        return []
+
+    r = rows[0]
+    score = _get(r, "GOVERNANCE_SCORE", "governance_score")
+    conf = _get(r, "CONFIDENCE", "confidence")
+
+    if score is None:
+        return []
+
+    return [
+        EvidenceScore(
+            source=SignalSource.BOARD_COMPOSITION,
+            raw_score=_clamp_0_100(Decimal(str(score))),
+            confidence=_clamp_0_1(Decimal(str(conf)) if conf is not None else Decimal("0.50")),
+            evidence_count=1,
+            metadata={
+                "ticker": ticker,
+                "has_tech_committee": bool(_get(r, "HAS_TECH_COMMITTEE", "has_tech_committee") or False),
+                "has_ai_expertise": bool(_get(r, "HAS_AI_EXPERTISE", "has_ai_expertise") or False),
+                "has_data_officer": bool(_get(r, "HAS_DATA_OFFICER", "has_data_officer") or False),
+                "has_independent_majority": bool(_get(r, "HAS_INDEPENDENT_MAJORITY", "has_independent_majority") or False),
+                "has_risk_tech_oversight": bool(_get(r, "HAS_RISK_TECH_OVERSIGHT", "has_risk_tech_oversight") or False),
+                "has_ai_strategy": bool(_get(r, "HAS_AI_STRATEGY", "has_ai_strategy") or False),
+            },
+        )
+    ]
+
+
+def load_sec_evidence_from_snowflake_with_rubrics(ticker: str, snowflake_service) -> List[EvidenceScore]:
+    """
+    DDL aligned: document_chunks_sec(content, section, chunk_index) joined to documents_sec.
+    Produces ONE EvidenceScore per section to avoid double counting.
+    """
+    scorer = RubricScorer()
+
+    q = """
+        SELECT
+            c.section,
+            c.content,
+            c.chunk_index
+        FROM document_chunks_sec c
+        JOIN documents_sec d ON c.document_id = d.id
+        WHERE UPPER(d.ticker) = UPPER(%(ticker)s)
+          AND c.section IS NOT NULL
+          AND c.section NOT IN ('Unknown', 'Intro')
+        ORDER BY c.section, c.chunk_index
+    """
+    try:
+        rows = snowflake_service.execute_query(q, {"ticker": ticker})
+    except Exception as e:
+        logger.error("Failed to load SEC chunks", ticker=ticker, err=str(e))
+        return []
+
+    if not rows:
+        return []
+
+    chunks_by_section: Dict[str, List[str]] = {}
+    for r in rows:
+        sec = _get(r, "SECTION", "section")
+        txt = _get(r, "CONTENT", "content") or ""
+        if not sec:
+            continue
+        chunks_by_section.setdefault(str(sec), []).append(str(txt))
+
+    out: List[EvidenceScore] = []
+
+    for section, chunks in chunks_by_section.items():
+        # Only accept sections we explicitly model as SignalSources
+        try:
+            source = SignalSource(section)
+        except ValueError:
+            logger.debug("Skipping unmapped SEC section", section=section)
+            continue
+
+        mapping = SIGNAL_TO_DIMENSION_MAP.get(source)
+        if not mapping:
+            continue
+
+        text = concatenate_evidence_chunks(chunks)
+
+        # Score each mapped dimension (audit), then blend into one section score.
+        dims: List[Tuple[Dimension, Decimal]] = [(mapping.primary_dimension, mapping.primary_weight)]
+        dims.extend([(d, w) for d, w in mapping.secondary_mappings.items()])
+
+        rubric_by_dimension: Dict[str, float] = {}
+        confs: List[Decimal] = []
+        blended = Decimal("0")
+
+        for dim, w in dims:
+            rr = scorer.score_dimension(dim.value, text, quantitative_metrics={})
+            rubric_by_dimension[dim.value] = float(rr.score)
+            confs.append(rr.confidence)
+            blended += rr.score * w
+
+        raw_score = _clamp_0_100(blended)
+
+        avg_conf = (sum(confs) / Decimal(str(len(confs)))) if confs else Decimal("0.30")
+        confidence = _clamp_0_1(avg_conf * mapping.reliability)
+
+        out.append(
+            EvidenceScore(
+                source=source,
+                raw_score=raw_score,
+                confidence=confidence,
+                evidence_count=len(chunks),
+                metadata={
+                    "ticker": ticker,
+                    "section": section,
+                    "rubric_by_dimension": rubric_by_dimension,
+                    "chunk_count": len(chunks),
+                },
+            )
+        )
+
+    return out
+
+
+def load_all_evidence_from_snowflake(ticker: str, snowflake_service) -> List[EvidenceScore]:
+    evidence: List[EvidenceScore] = []
+    evidence.extend(load_external_signals_from_snowflake(ticker, snowflake_service))
+    evidence.extend(load_sec_evidence_from_snowflake_with_rubrics(ticker, snowflake_service))
+    evidence.extend(load_culture_evidence_from_snowflake(ticker, snowflake_service))
+    evidence.extend(load_board_evidence_from_snowflake(ticker, snowflake_service))
+    return evidence
+
+
 def map_evidence(evidence_scores: List[EvidenceScore]) -> Dict[Dimension, DimensionScore]:
-    """Convenience function to map evidence without creating mapper instance."""
-    mapper = EvidenceMapper()
-    return mapper.map_evidence_to_dimensions(evidence_scores)
+    return EvidenceMapper().map_evidence_to_dimensions(evidence_scores)

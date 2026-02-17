@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS company_signal_summaries (
 
 
 -- These clustering keys improve pruning on common filters.
-ALTER TABLE documents CLUSTER BY (company_id, status, filing_type, filing_date);
-ALTER TABLE document_chunks CLUSTER BY (document_id, chunk_index);
+ALTER TABLE documents_sec CLUSTER BY (company_id, status, filing_type, filing_date);
+ALTER TABLE document_chunks_sec CLUSTER BY (document_id, chunk_index);
 ALTER TABLE external_signals CLUSTER BY (company_id, category, signal_date);
 ALTER TABLE company_signal_summaries CLUSTER BY (company_id);
