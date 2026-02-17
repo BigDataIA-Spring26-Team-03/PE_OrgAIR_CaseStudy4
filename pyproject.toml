@@ -29,6 +29,7 @@ playwright-stealth = "^2.0.2"
 langchain = "^1.2.10"
 langchain-openai = "^1.1.9"
 python-dotenv = "^1.2.1"
+yfinance = "^1.2.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
