@@ -323,19 +323,30 @@ def scrape_job_postings(
             c_norm = _norm_company(c)
             c_sq = _squish(c)
 
-            # 1) raw substring match
+            # 1) substring match with safeguards
             for a in alias_raws:
-                if a and a in c_lower:
+                if not a:
+                    continue
+
+                # if alias is very short (GE, DE, GS), require word-boundary token match
+                if len(a) <= 3:
+                    if re.search(rf"\b{re.escape(a)}\b", c_lower):
+                        return True
+                    continue
+
+                # otherwise allow substring only for single-token longer aliases ("walmart", "nvidia")
+                if " " not in a and a in c_lower:
                     return True
 
-            # 2) normalized equality match
+            # 2) normalized equality match (handles suffixes like Inc/Corp etc.)
             for n in alias_norms:
                 if n and n == c_norm:
                     return True
 
-            # 3) space/punctuation-insensitive match
+            # 3) squish match (fixes JPMorganChase vs JPMorgan Chase)
             for a in aliases:
-                if _squish(a) and _squish(a) == c_sq:
+                a_sq = _squish(a)
+                if a_sq and a_sq == c_sq:
                     return True
 
             return False

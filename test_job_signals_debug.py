@@ -2,7 +2,7 @@
 from app.services.snowflake import SnowflakeService
 from app.pipelines.job_signals import scrape_job_postings
 
-TICKERS = ["DE", "CAT", "UNH", "HCA", "PAYX", "ADP", "WMT", "GS", "JPM", "TGT"]
+TICKERS = ["NVDA", "JPM", "WMT", "GE", "DG"]
 
 
 def get_company_row_by_ticker(db: SnowflakeService, ticker: str):
