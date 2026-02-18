@@ -12,3 +12,5 @@ langchain>=0.3
 langchain-openai>=0.3
 python-dotenv
 beautifulsoup4
+apache-airflow==2.10.4
+requests
