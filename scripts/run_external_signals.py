@@ -58,7 +58,7 @@ def main() -> None:
     )
     parser.add_argument("--company-id", required=True, help="Must be an existing companies.id in Snowflake")
     parser.add_argument("--query", required=True, help="Job search query (e.g., 'machine learning engineer')")
-    parser.add_argument("--location", default="Boston, MA")
+    parser.add_argument("--location", default="United States")
     parser.add_argument("--sources", default="indeed,google", help="Comma-separated (indeed,google)")
     parser.add_argument("--max-per-source", type=int, default=3)
 

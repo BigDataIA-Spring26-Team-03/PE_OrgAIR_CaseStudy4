@@ -10,10 +10,14 @@ from pydantic import BaseModel, Field
 
 
 class SignalCategory(str, Enum):
-    jobs = "jobs"
-    tech = "tech"
-    patents = "patents"
-    leadership = "leadership"
+    """
+    Must match the values stored in the external_signals.category column
+    in Snowflake.
+    """
+    TECHNOLOGY_HIRING = "technology_hiring"
+    INNOVATION_ACTIVITY = "innovation_activity"
+    DIGITAL_PRESENCE = "digital_presence"
+    LEADERSHIP_SIGNALS = "leadership_signals"
 
 
 class SignalSource(str, Enum):

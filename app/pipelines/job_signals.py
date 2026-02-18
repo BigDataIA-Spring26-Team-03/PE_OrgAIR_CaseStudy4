@@ -152,6 +152,38 @@ def _norm_company(s: str) -> str:
     return x
 
 
+def _squish(s: str) -> str:
+    """Lowercase, remove non-alphanumerics + spaces. 'JPMorgan Chase' -> 'jpmorganchase'"""
+    x = (s or "").lower()
+    x = re.sub(r"[^a-z0-9]+", "", x)
+    return x
+
+
+def _is_ticker_like(a: str) -> bool:
+    """
+    Treat very short ALL-CAPS strings as tickers (DE, GS).
+    NOTE: We ALLOW 3-5 letter ALL-CAPS because many companies use these as their brand in postings (ADP, JPM, WMT).
+    """
+    a = (a or "").strip()
+    return bool(re.fullmatch(r"[A-Z]{1,5}", a)) and len(a) <= 2
+
+
+def _clean_company_display_name(name: str) -> str:
+    """
+    Convert 'Paychex Inc.' -> 'Paychex'
+    Convert 'Automatic Data Processing' -> 'Automatic Data Processing' (unchanged)
+    """
+    n = (name or "").strip()
+    n = re.sub(
+        r"\b(inc|inc\.|incorporated|corp|corporation|llc|ltd|limited|plc)\b\.?",
+        "",
+        n,
+        flags=re.IGNORECASE,
+    )
+    n = re.sub(r"\s+", " ", n).strip(" ,")
+    return n
+
+
 def job_postings_to_signals(company_id: str, jobs: List[JobPosting]) -> List[ExternalSignal]:
     signals: List[ExternalSignal] = []
     now = datetime.utcnow()
@@ -171,9 +203,9 @@ def job_postings_to_signals(company_id: str, jobs: List[JobPosting]) -> List[Ext
 
         signals.append(
             ExternalSignal(
-                id=_signal_id(company_id, SignalCategory.jobs, job.title, job.url),
+                id=_signal_id(company_id, SignalCategory.TECHNOLOGY_HIRING, job.title, job.url),
                 company_id=company_id,
-                category=SignalCategory.jobs,
+                category=SignalCategory.TECHNOLOGY_HIRING,
                 source=SignalSource.external,
                 signal_date=now,
                 score=score_0_100,
@@ -192,7 +224,6 @@ def aggregate_job_signals(company_id: str, job_signals: list[ExternalSignal]) ->
     else:
         jobs_score = int(round(mean(s.score for s in job_signals)))
 
-    # other pipelines fill these later in orchestrator summary builder
     tech_score = 0
     patents_score = 0
     leadership_score = 0
@@ -219,14 +250,14 @@ def scrape_job_postings(
     max_results_per_source: int = 25,
     hours_old: int = 24 * 30,
     target_company_name: Optional[str] = None,
-    target_company_aliases: Optional[list[str]] = None,  # ✅ NEW
+    target_company_aliases: Optional[list[str]] = None,
 ) -> list[JobPosting]:
     """
     Scrape job postings using JobSpy and return JobPosting objects.
 
     If target_company_name/aliases are provided:
-      1) BOOST recall by adding (a best alias) into the search query
-      2) FILTER results to ANY alias (contains OR normalized-equality)
+      1) BOOST recall by trying a human-name query first, then a brand-caps fallback
+      2) FILTER results to ANY alias (contains OR normalized-equality OR squish-equality)
     """
     # -----------------------------
     # Build alias list
@@ -234,6 +265,12 @@ def scrape_job_postings(
     aliases: list[str] = []
     if target_company_name:
         aliases.append(target_company_name)
+
+        # Add cleaned name (e.g., "Paychex" in addition to "Paychex Inc.")
+        cleaned = _clean_company_display_name(target_company_name)
+        if cleaned and cleaned.lower() != target_company_name.lower():
+            aliases.append(cleaned)
+
     if target_company_aliases:
         aliases.extend([a for a in target_company_aliases if a])
 
@@ -242,22 +279,35 @@ def scrape_job_postings(
     alias_norms = [_norm_company(a) for a in aliases]
 
     # -----------------------------
-    # Boost recall (query)
-    # Prefer short alias like ticker ("ADP") if present; else use company name
+    # Query strategy: try primary (human/cleaned) then fallback (brand-caps like ADP/JPM/WMT)
     # -----------------------------
-    effective_query = search_query
-    if aliases:
-        best_alias = min(aliases, key=len)  # short tends to work well for recall (tickers)
-        effective_query = f'{search_query} "{best_alias}"'
+    def _scrape(effective_query: str):
+        return scrape_jobs(
+            site_name=sources,
+            search_term=effective_query,
+            location=location,
+            results_wanted=max_results_per_source * len(sources) * 4,
+            hours_old=hours_old,
+            linkedin_fetch_description=True,
+        )
 
-    df = scrape_jobs(
-        site_name=sources,
-        search_term=effective_query,
-        location=location,
-        results_wanted=max_results_per_source * len(sources),
-        hours_old=hours_old,
-        linkedin_fetch_description=True,
-    )
+    df = None
+    primary_query = search_query
+    secondary_query = None
+
+    if aliases:
+        preferred = [a for a in aliases if not _is_ticker_like(a) and len(a) >= 5]
+        best_human = preferred[0] if preferred else aliases[0]
+        primary_query = f'{search_query} "{best_human}"'
+
+        brand_caps = [a for a in aliases if re.fullmatch(r"[A-Z]{3,5}", (a or "").strip())]
+        if brand_caps:
+            secondary_query = f'{search_query} "{brand_caps[0]}"'
+
+    df = _scrape(primary_query)
+
+    if (df is None or df.empty) and secondary_query:
+        df = _scrape(secondary_query)
 
     if df is None or df.empty:
         return []
@@ -271,15 +321,32 @@ def scrape_job_postings(
             c = str(company_val or "")
             c_lower = c.lower()
             c_norm = _norm_company(c)
+            c_sq = _squish(c)
 
-            # 1) contains match for any alias ("adp" in "ADP", "walmart" in "Walmart Inc.")
+            # 1) substring match with safeguards
             for a in alias_raws:
-                if a and a in c_lower:
+                if not a:
+                    continue
+
+                # if alias is very short (GE, DE, GS), require word-boundary token match
+                if len(a) <= 3:
+                    if re.search(rf"\b{re.escape(a)}\b", c_lower):
+                        return True
+                    continue
+
+                # otherwise allow substring only for single-token longer aliases ("walmart", "nvidia")
+                if " " not in a and a in c_lower:
                     return True
 
-            # 2) normalized equality fallback
+            # 2) normalized equality match (handles suffixes like Inc/Corp etc.)
             for n in alias_norms:
                 if n and n == c_norm:
+                    return True
+
+            # 3) squish match (fixes JPMorganChase vs JPMorgan Chase)
+            for a in aliases:
+                a_sq = _squish(a)
+                if a_sq and a_sq == c_sq:
                     return True
 
             return False
