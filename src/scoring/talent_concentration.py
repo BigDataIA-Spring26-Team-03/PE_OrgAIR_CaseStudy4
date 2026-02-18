@@ -1,3 +1,6 @@
+#This file shows how dependent a company's AI team is on a small number of key people
+# High Talent Concentration = Key-person risk
+# Low Talent Concentration = Distributed talent, safer organization
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import List, Set
@@ -7,26 +10,15 @@ from typing import List, Set
 class JobAnalysis:
     """Analysis of job postings for talent concentration."""
     total_ai_jobs: int
-    senior_ai_jobs: int          # Principal, Staff, Director, VP level
-    mid_ai_jobs: int             # Senior, Lead level
-    entry_ai_jobs: int           # Junior, Associate, entry level
-    unique_skills: Set[str]      # Distinct skills required
+    senior_ai_jobs: int          
+    mid_ai_jobs: int            
+    entry_ai_jobs: int           
+    unique_skills: Set[str]   
 
 
 class TalentConcentrationCalculator:
     """
     Calculate talent concentration (key-person risk).
-
-    Formula:
-    TC = 0.4 * leadership_ratio + 0.3 * team_size_factor + 0.2 *
-         skill_concentration + 0.1 * individual_mentions
-
-    Where:
-    - leadership_ratio = senior_jobs / total_jobs (0-1)
-    - team_size_factor = 1 / sqrt(total_jobs) capped at 1 (smaller teams = higher TC)
-    - skill_concentration = 1 - (unique_skills / 15) capped at [0,1]
-    - individual_mentions = glassdoor mentions / reviews (0-1)
-
     Bounded to [0, 1]
     """
 
@@ -38,28 +30,25 @@ class TalentConcentrationCalculator:
     ) -> Decimal:
         """
         Calculate talent concentration ratio.
-
-        Args:
-            job_analysis: Analysis of job postings
-            glassdoor_individual_mentions: Count of reviews mentioning specific people
-            glassdoor_review_count: Total Glassdoor reviews
-
-        Returns:
-            Talent concentration ratio in [0, 1]
         """
         # Calculate leadership ratio
+        # Higher ratio → higher talent concentration → more risk
         if job_analysis.total_ai_jobs > 0:
             leadership_ratio = job_analysis.senior_ai_jobs / job_analysis.total_ai_jobs
         else:
             leadership_ratio = 0.5  # Default if no data
 
         # Calculate team size factor
+        #Small team → high TC
+        #Large team → low TC
         team_size_factor = min(1.0, 1.0 / (job_analysis.total_ai_jobs ** 0.5 + 0.1))
 
         # Calculate skill concentration
+        # More diverse skills → lower concentration → safer
         skill_concentration = max(0, 1 - (len(job_analysis.unique_skills) / 15))
 
         # Calculate individual mention factor
+        # If reviews focus on individuals → higher concentration risk.
         if glassdoor_review_count > 0:
             individual_factor = min(1.0, glassdoor_individual_mentions / glassdoor_review_count)
         else:
@@ -76,14 +65,10 @@ class TalentConcentrationCalculator:
 
     def analyze_job_postings(
         self,
-        postings: List[dict],    # From CS2 job collector
+        postings: List[dict],    
     ) -> JobAnalysis:
         """
         Categorize job postings by level.
-
-        Senior keywords: principal, staff, director, vp, head, chief
-        Mid keywords: senior, lead, manager
-        Entry keywords: junior, associate, entry, intern
         """
         senior_keywords = {"principal", "staff", "director", "vp", "vice president", "head", "chief"}
         mid_keywords = {"senior", "lead", "manager"}
