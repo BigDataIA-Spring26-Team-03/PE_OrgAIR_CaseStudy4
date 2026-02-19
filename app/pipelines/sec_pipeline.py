@@ -56,7 +56,7 @@ CANONICAL = {
     },
     "10-Q": {
         "part1item1": "Item 1",
-        "part1item2": "Item 2",
+        "part1item2": "Item 7 (MD&A)",   # Part I Item 2 = MD&A → same dimension as 10-K Item 7
         "part2item1": "Item 1A (Risk)",
     },
 }
@@ -552,7 +552,7 @@ class SECPipeline:
             if "ITEM 1A" in upper_text or "RISK FACTORS" in upper_text:
                 return "Item 1A (Risk)"
             if "ITEM 2" in upper_text and ("MANAGEMENT" in upper_text or "MD&A" in upper_text):
-                return "Item 2"
+                return "Item 7 (MD&A)"   # 10-Q Part I Item 2 = MD&A
             if "ITEM 1" in upper_text and "FINANCIAL" in upper_text:
                 return "Item 1"
         elif filing_type == "8-K":
@@ -624,7 +624,7 @@ class SECPipeline:
             if "ITEM 1A" in header_upper or "RISK" in header_upper:
                 return "Item 1A (Risk)"
             if "ITEM 2" in header_upper or "MD&A" in header_upper or "MANAGEMENT" in header_upper:
-                return "Item 2"
+                return "Item 7 (MD&A)"   # 10-Q Part I Item 2 = MD&A
             if "ITEM 1" in header_upper:
                 return "Item 1"
             return None

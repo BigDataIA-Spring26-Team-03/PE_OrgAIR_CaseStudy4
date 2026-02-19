@@ -1,10 +1,4 @@
 # src/scoring/integration_service.py
-"""
-Task 6.0b: Scoring Integration Service
-Full Org-AI-R pipeline orchestrator:
-  CS1 fetch → CS2 fetch → Glassdoor/Board collection → Evidence mapping
-  → VR → Position Factor → HR → Synergy → Org-AI-R → Confidence → Persist
-"""
 
 from __future__ import annotations
 
