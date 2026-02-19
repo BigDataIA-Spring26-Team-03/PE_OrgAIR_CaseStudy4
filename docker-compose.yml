@@ -53,18 +53,16 @@ services:
 
   airflow-init:
     image: apache/airflow:2.10.4-python3.10
-    entrypoint: /bin/bash -c
+    # JSON array avoids Windows Git Bash path translation of /bin/bash
+    entrypoint: ["bash", "-c"]
     command:
-      - |
-        pip install requests structlog snowflake-connector-python yfinance 2>/dev/null
-        airflow db migrate
-        airflow users create \
-          --username admin \
-          --password admin \
-          --firstname Admin \
-          --lastname User \
-          --role Admin \
-          --email admin@example.com || true
+      - >-
+        pip install --quiet requests structlog snowflake-connector-python yfinance &&
+        airflow db migrate &&
+        airflow users create
+        --username admin --password admin
+        --firstname Admin --lastname User
+        --role Admin --email admin@example.com || true
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -77,13 +75,11 @@ services:
 
   airflow-webserver:
     image: apache/airflow:2.10.4-python3.10
-    entrypoint: /bin/bash -c
-    command:
-      - |
-        pip install requests structlog snowflake-connector-python yfinance 2>/dev/null
-        exec airflow webserver
+    # Use _PIP_ADDITIONAL_REQUIREMENTS (built-in Airflow image feature)
+    # and plain command string — no custom entrypoint
+    command: webserver
     ports:
-      - "8080:8080"
+      - "8081:8080"
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -91,6 +87,8 @@ services:
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+      # Install extra packages at container startup (Airflow built-in feature)
+      _PIP_ADDITIONAL_REQUIREMENTS: "requests structlog snowflake-connector-python yfinance"
       API_BASE_URL: http://api:8000
 
       # Snowflake creds (for persist_assessment tasks)
@@ -113,17 +111,14 @@ services:
 
   airflow-scheduler:
     image: apache/airflow:2.10.4-python3.10
-    entrypoint: /bin/bash -c
-    command:
-      - |
-        pip install requests structlog snowflake-connector-python yfinance 2>/dev/null
-        exec airflow scheduler
+    command: scheduler
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CORE__FERNET_KEY: ""
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      _PIP_ADDITIONAL_REQUIREMENTS: "requests structlog snowflake-connector-python yfinance"
       API_BASE_URL: http://api:8000
 
       # Snowflake creds
