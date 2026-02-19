@@ -22,7 +22,6 @@ from uuid import uuid4
 import httpx
 import structlog
 import json
-
 from app.config import settings
 from app.services.snowflake import SnowflakeService
 
@@ -39,6 +38,9 @@ COMPANY_USPTO_NAMES = {
     "HCA": "HCA Holdings, Inc.",
     "ADP": "AUTOMATIC DATA PROCESSING, INC.",
     "PAYX": "Paychex Time & Attendance, Inc.",
+    "NVDA":"NVIDIA Corporation",
+    "DG":"Dollar General",
+    "GE":"General Electric"
 }
 
 
