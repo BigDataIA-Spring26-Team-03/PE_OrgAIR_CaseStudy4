@@ -1,17 +1,3 @@
-"""
-Unified SEC Filing Pipeline
-===========================
-Single file handling: Download → Parse → Chunk → Store (S3 + Snowflake)
-
-Parser strategy:
-  Primary:  edgartools  — purpose-built for SEC EDGAR, extracts Item 1/1A/7 natively
-  Fallback: Mistral OCR — for PDF-only filings or when edgartools fails
-
-Section names stored in document_chunks_sec are LOCKED to the exact strings
-expected by integration_service.py SEC_SECTION_MAP:
-  "Item 1 (Business)", "Item 1A (Risk)", "Item 7 (MD&A)"
-"""
-
 from __future__ import annotations
 
 import gzip
