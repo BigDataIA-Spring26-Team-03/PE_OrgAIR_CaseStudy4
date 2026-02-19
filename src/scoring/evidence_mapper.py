@@ -7,11 +7,11 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Tuple
 from enum import Enum
 from decimal import Decimal
-import logging
+import structlog
 
 from .rubric_scorer import RubricScorer, concatenate_evidence_chunks
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 # ----------------------------

@@ -13,8 +13,31 @@ from app.pipelines.sec_edgar import collect_for_tickers
 from app.pipelines.document_parser_from_s3 import main as parse_main
 from app.pipelines.document_text_cleaner import main as clean_main
 from app.pipelines.document_chunker_s3 import main as chunk_main
+from app.pipelines.sec_pipeline import SECPipeline
 
 router = APIRouter(prefix="/api/v1/documents", tags=["Documents"])
+
+
+# -----------------------------
+# Unified collect by ticker
+# -----------------------------
+@router.post("/collect/{ticker}", status_code=202)
+def collect_by_ticker(ticker: str) -> dict:
+    """
+    Run the unified SEC pipeline for a single ticker.
+    Downloads 10-K x2, 8-K x2, 10-Q x4 → parses with edgartools (Mistral OCR for PDFs)
+    → semantic chunks (500-1000 words, 75-word overlap) → stores in S3 + Snowflake.
+    Deletes existing documents_sec + document_chunks_sec rows for the ticker first.
+    """
+    pipeline = SECPipeline()
+    result = pipeline.run(ticker.upper().strip())
+    return {
+        "status": "completed",
+        "ticker": result["ticker"],
+        "docs_processed": result["docs_processed"],
+        "chunks_created": result["chunks_created"],
+        "errors": result["errors"],
+    }
 
 
 # -----------------------------
@@ -192,7 +215,7 @@ def list_documents(
           id, company_id, ticker, filing_type, filing_date,
           source_url, local_path, s3_key, content_hash,
           status, chunk_count, error_message, created_at, processed_at
-        FROM documents
+        FROM documents_sec
         WHERE {" AND ".join(where)}
         ORDER BY created_at DESC
         LIMIT %(limit)s OFFSET %(offset)s
@@ -216,7 +239,7 @@ def get_document(doc_id: str) -> dict[str, Any]:
           id, company_id, ticker, filing_type, filing_date,
           source_url, local_path, s3_key, content_hash,
           status, chunk_count, error_message, created_at, processed_at
-        FROM documents
+        FROM documents_sec
         WHERE id = %(id)s
         LIMIT 1
         """,
@@ -240,7 +263,7 @@ def get_document_chunks(
         SELECT
           id, document_id, chunk_index, content,
           section, start_char, end_char, word_count
-        FROM document_chunks
+        FROM document_chunks_sec
         WHERE document_id = %(doc_id)s
         ORDER BY chunk_index
         LIMIT %(limit)s OFFSET %(offset)s

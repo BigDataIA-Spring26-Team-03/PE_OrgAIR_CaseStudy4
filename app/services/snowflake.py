@@ -511,7 +511,7 @@ class SnowflakeService:
     def list_documents_by_status(self, status: str, limit: int = 200) -> List[Dict]:
         query = """
             SELECT id, ticker, filing_type, s3_key, status
-            FROM documents
+            FROM documents_sec
             WHERE status = %(status)s
             ORDER BY created_at ASC
             LIMIT %(limit)s
@@ -521,7 +521,7 @@ class SnowflakeService:
     def mark_document_cleaned(self, document_id: str) -> None:
         self.execute_update(
             """
-            UPDATE documents
+            UPDATE documents_sec
             SET status = 'cleaned',
                 processed_at = CURRENT_TIMESTAMP(),
                 error_message = NULL
@@ -535,7 +535,7 @@ class SnowflakeService:
         msg = (message or "")[:2000]
         self.execute_update(
             """
-            UPDATE documents
+            UPDATE documents_sec
             SET status = 'error',
                 error_message = %(msg)s,
                 processed_at = CURRENT_TIMESTAMP()
