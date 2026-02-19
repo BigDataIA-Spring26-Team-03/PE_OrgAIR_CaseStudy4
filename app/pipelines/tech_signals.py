@@ -224,7 +224,7 @@ def tech_inputs_to_signals(company_id: str, items: List[TechSignalInput]) -> Lis
             ExternalSignal(
                 id=_signal_id(company_id, item.title, item.url),
                 company_id=company_id,
-                category=SignalCategory.tech,
+                category=SignalCategory.DIGITAL_PRESENCE,
                 source=SignalSource.external,
                 signal_date=now,
                 score=score_0_100,

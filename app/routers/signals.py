@@ -6,19 +6,22 @@ ALL endpoints use TICKER (not company_id) for easy access.
 Comprehensive AI/ML signal collection with no arbitrary limits.
 """
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
-from typing import Optional
+from __future__ import annotations
+
 from datetime import datetime
+from typing import Optional
+import json
 import structlog
 
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+
+from app.models.signal import ExternalSignal, SignalCategory, SignalSource
 from app.services.snowflake import SnowflakeService
-from app.models.signal import ExternalSignal, CompanySignalSummary, SignalCategory
 
 # Import all collectors
 from app.pipelines.job_signals import scrape_job_postings, job_postings_to_signals
 from app.pipelines.tech_signals import scrape_tech_signal_inputs, tech_inputs_to_signals
 from app.pipelines.patent_signals import collect_patent_signals_real, COMPANY_USPTO_NAMES
-from app.pipelines.leadership_signals import scrape_leadership_profiles_mock, leadership_profiles_to_signals
 from app.pipelines.external_signals_orchestrator import build_company_signal_summary
 
 logger = structlog.get_logger()
@@ -34,58 +37,45 @@ async def collect_all_signals(
     ticker: str,
     background_tasks: BackgroundTasks,
     years: int = Query(default=5, ge=1, le=10, description="Years for patent search"),
-    job_location: str = Query(default="United States", description="Job search location")
+    job_location: str = Query(default="United States", description="Job search location"),
 ):
     """
     🎯 Collect ALL 4 signal types for a company - COMPREHENSIVE SEARCH
-    
+
     What it does:
-    1. Jobs: Searches 10+ AI/ML job types (ML Engineer, Data Scientist, etc.)
-              No limits - gets ALL available jobs for the company
+    1. Jobs: Searches 10+ AI/ML job types
     2. Tech Stack: Scrapes company website for AI technologies
     3. Patents: Calls USPTO API for AI patents
-    4. Leadership: Analyzes executive AI expertise
-    
+    4. Leadership: Uses latest board governance signal persisted in Snowflake
+
     Then:
     - Inserts all signals into external_signals table
-    - Calculates composite score (weighted average)
+    - Re-aggregates category scores from Snowflake
     - Updates company_signal_summaries
-    
-    Args:
-        ticker: Company ticker (WMT, JPM, CAT, etc.)
-        years: Years to look back for patents (default: 5)
-        job_location: Where to search for jobs (default: "United States")
-        
-    Returns:
-        Immediate confirmation + background job started
     """
     db = SnowflakeService()
     try:
-        # Get company by ticker
         company_query = """
-            SELECT id, name, ticker FROM companies
+            SELECT id, name, ticker
+            FROM companies
             WHERE ticker = %(ticker)s AND is_deleted = FALSE
         """
         companies = db.execute_query(company_query, {"ticker": ticker.upper()})
-        
+
         if not companies:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Company '{ticker}' not found in database"
-            )
-        
+            raise HTTPException(status_code=404, detail=f"Company '{ticker}' not found in database")
+
         company = companies[0]
-        
-        # Trigger comprehensive collection in background
+
         background_tasks.add_task(
             run_comprehensive_collection_task,
-            company_id=company['id'],
-            company_name=company['name'],
+            company_id=company["id"],
+            company_name=company["name"],
             ticker=ticker.upper(),
             years=years,
-            job_location=job_location
+            job_location=job_location,
         )
-        
+
         return {
             "status": "accepted",
             "message": f"Comprehensive signal collection started for {ticker}",
@@ -94,12 +84,10 @@ async def collect_all_signals(
                 "jobs": "10+ AI/ML role types, unlimited results",
                 "tech_stack": "Full website technology scan",
                 "patents": f"All AI patents ({years} years)",
-                "leadership": "All C-suite executives"
+                "leadership": "From board governance signal (Snowflake)",
             },
-            "estimated_time": "30-60 seconds",
-            "note": "Collection running in background. Check /api/v1/signals/summary for results."
+            "note": "Collection running in background. Check /api/v1/signals/summary for results.",
         }
-        
     finally:
         db.close()
 
@@ -108,46 +96,31 @@ async def collect_all_signals(
 async def collect_patents_only(
     ticker: str,
     background_tasks: BackgroundTasks,
-    years: int = Query(default=5, ge=1, le=10)
+    years: int = Query(default=5, ge=1, le=10),
 ):
-    """
-    Collect ONLY patent signals for a company (for testing/debugging).
-    
-    Args:
-        ticker: Company ticker (WMT, JPM, etc.)
-        years: Years to look back (default: 5)
-    """
     db = SnowflakeService()
     try:
         company_query = """
-            SELECT id, name, ticker FROM companies
+            SELECT id, name, ticker
+            FROM companies
             WHERE ticker = %(ticker)s AND is_deleted = FALSE
         """
         companies = db.execute_query(company_query, {"ticker": ticker.upper()})
-        
+
         if not companies:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Company '{ticker}' not found"
-            )
-        
+            raise HTTPException(status_code=404, detail=f"Company '{ticker}' not found")
+
         company = companies[0]
-        
+
         background_tasks.add_task(
             run_patent_only_task,
-            company_id=company['id'],
-            company_name=company['name'],
+            company_id=company["id"],
+            company_name=company["name"],
             ticker=ticker.upper(),
-            years=years
+            years=years,
         )
-        
-        return {
-            "status": "accepted",
-            "message": f"Patent collection started for {ticker}",
-            "company": company,
-            "parameters": {"years": years}
-        }
-        
+
+        return {"status": "accepted", "message": f"Patent collection started for {ticker}", "company": company}
     finally:
         db.close()
 
@@ -156,46 +129,31 @@ async def collect_patents_only(
 async def collect_jobs_only(
     ticker: str,
     background_tasks: BackgroundTasks,
-    job_location: str = Query(default="United States")
+    job_location: str = Query(default="United States"),
 ):
-    """
-    Collect ONLY job signals - comprehensive AI/ML search.
-    
-    Args:
-        ticker: Company ticker
-        job_location: Job search location
-    """
     db = SnowflakeService()
     try:
         company_query = """
-            SELECT id, name, ticker FROM companies
+            SELECT id, name, ticker
+            FROM companies
             WHERE ticker = %(ticker)s AND is_deleted = FALSE
         """
         companies = db.execute_query(company_query, {"ticker": ticker.upper()})
-        
+
         if not companies:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Company '{ticker}' not found"
-            )
-        
+            raise HTTPException(status_code=404, detail=f"Company '{ticker}' not found")
+
         company = companies[0]
-        
+
         background_tasks.add_task(
             run_jobs_only_task,
-            company_id=company['id'],
-            company_name=company['name'],
+            company_id=company["id"],
+            company_name=company["name"],
             ticker=ticker.upper(),
-            job_location=job_location
+            job_location=job_location,
         )
-        
-        return {
-            "status": "accepted",
-            "message": f"Comprehensive job search started for {ticker}",
-            "company": company,
-            "search_scope": "10+ AI/ML role types"
-        }
-        
+
+        return {"status": "accepted", "message": f"Comprehensive job search started for {ticker}", "company": company}
     finally:
         db.close()
 
@@ -203,25 +161,14 @@ async def collect_jobs_only(
 @router.post("/collect/all")
 async def collect_all_companies(
     background_tasks: BackgroundTasks,
-    years: int = Query(default=5, ge=1, le=10)
+    years: int = Query(default=5, ge=1, le=10),
 ):
-    """
-    Collect ALL signals for ALL companies with USPTO mappings.
-    
-    Runs comprehensive collection for all 9 companies.
-    This will take several minutes!
-    """
-    background_tasks.add_task(
-        run_batch_collection_task,
-        years=years
-    )
-    
+    background_tasks.add_task(run_batch_collection_task, years=years)
     return {
         "status": "accepted",
-        "message": "Batch collection started for all 9 companies",
+        "message": "Batch collection started",
         "companies": list(COMPANY_USPTO_NAMES.keys()),
-        "estimated_time": "5-10 minutes",
-        "note": "Check /api/v1/signals/summary for progress"
+        "note": "Check /api/v1/signals/summary for progress",
     }
 
 
@@ -231,140 +178,89 @@ async def collect_all_companies(
 
 @router.get("/company/{ticker}")
 async def get_signals_by_ticker(ticker: str):
-    """
-    Get all signals for a company BY TICKER.
-    
-    Args:
-        ticker: Company ticker (WMT, JPM, etc.)
-        
-    Returns:
-        All signals for that company
-    """
     db = SnowflakeService()
     try:
-        # Get company by ticker first
         company_query = """
-            SELECT id FROM companies
+            SELECT id
+            FROM companies
             WHERE ticker = %(ticker)s AND is_deleted = FALSE
         """
         companies = db.execute_query(company_query, {"ticker": ticker.upper()})
-        
+
         if not companies:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Company '{ticker}' not found"
-            )
-        
-        company_id = companies[0]['id']
-        
-        # Get signals
+            raise HTTPException(status_code=404, detail=f"Company '{ticker}' not found")
+
+        company_id = companies[0]["id"]
+
         signals_query = """
-            SELECT 
+            SELECT
                 id, company_id, category, source, signal_date,
-                raw_value, normalized_score, confidence, 
+                raw_value, normalized_score, confidence,
                 metadata, created_at
             FROM external_signals
             WHERE company_id = %(company_id)s
             ORDER BY signal_date DESC, created_at DESC
         """
-        
         signals = db.execute_query(signals_query, {"company_id": company_id})
-        
+
         if not signals:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No signals found for {ticker}"
-            )
-        
-        return {
-            "ticker": ticker.upper(),
-            "company_id": company_id,
-            "signal_count": len(signals),
-            "signals": signals
-        }
-        
+            raise HTTPException(status_code=404, detail=f"No signals found for {ticker}")
+
+        return {"ticker": ticker.upper(), "company_id": company_id, "signal_count": len(signals), "signals": signals}
     finally:
         db.close()
 
 
 @router.get("/company/{ticker}/category/{category}")
 async def get_signals_by_ticker_and_category(ticker: str, category: str):
-    """
-    Get signals for a company by TICKER and category.
-    
-    Args:
-        ticker: Company ticker (WMT, JPM, etc.)
-        category: Signal category (jobs, tech, patents, leadership)
-    """
     valid_categories = ["jobs", "tech", "patents", "leadership"]
-    
     if category not in valid_categories:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid category. Valid: {valid_categories}"
-        )
-    
+        raise HTTPException(status_code=400, detail=f"Invalid category. Valid: {valid_categories}")
+
     db = SnowflakeService()
     try:
-        # Get company by ticker
         company_query = """
-            SELECT id FROM companies
+            SELECT id
+            FROM companies
             WHERE ticker = %(ticker)s AND is_deleted = FALSE
         """
         companies = db.execute_query(company_query, {"ticker": ticker.upper()})
-        
         if not companies:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Company '{ticker}' not found"
-            )
-        
-        company_id = companies[0]['id']
-        
-        # Map category to DB format
+            raise HTTPException(status_code=404, detail=f"Company '{ticker}' not found")
+
+        company_id = companies[0]["id"]
+
         category_map = {
             "jobs": "technology_hiring",
             "tech": "digital_presence",
             "patents": "innovation_activity",
-            "leadership": "leadership_signals"
+            "leadership": "leadership_signals",
         }
         db_category = category_map.get(category, category)
-        
-        # Get signals
+
         signals_query = """
-            SELECT 
+            SELECT
                 id, company_id, category, source, signal_date,
-                raw_value, normalized_score, confidence, 
+                raw_value, normalized_score, confidence,
                 metadata, created_at
             FROM external_signals
             WHERE company_id = %(company_id)s
               AND category = %(category)s
-            ORDER BY signal_date DESC
+            ORDER BY signal_date DESC, created_at DESC
         """
-        
-        signals = db.execute_query(signals_query, {
-            "company_id": company_id,
-            "category": db_category
-        })
-        
-        return {
-            "ticker": ticker.upper(),
-            "category": category,
-            "signal_count": len(signals),
-            "signals": signals
-        }
-        
+        signals = db.execute_query(signals_query, {"company_id": company_id, "category": db_category})
+
+        return {"ticker": ticker.upper(), "category": category, "signal_count": len(signals), "signals": signals}
     finally:
         db.close()
 
 
 @router.get("/summary")
 async def get_all_summaries():
-    """Get summaries for all companies - ranked by composite score."""
     db = SnowflakeService()
     try:
         query = """
-            SELECT 
+            SELECT
                 css.company_id,
                 css.ticker,
                 c.name as company_name,
@@ -380,30 +276,18 @@ async def get_all_summaries():
             WHERE c.is_deleted = FALSE
             ORDER BY css.composite_score DESC
         """
-        
         summaries = db.execute_query(query)
-        
-        return {
-            "count": len(summaries),
-            "summaries": summaries
-        }
-        
+        return {"count": len(summaries), "summaries": summaries}
     finally:
         db.close()
 
 
 @router.get("/summary/{ticker}")
 async def get_summary_by_ticker(ticker: str):
-    """
-    Get summary for a company BY TICKER.
-    
-    Args:
-        ticker: Company ticker (WMT, JPM, etc.)
-    """
     db = SnowflakeService()
     try:
         query = """
-            SELECT 
+            SELECT
                 css.company_id,
                 css.ticker,
                 c.name as company_name,
@@ -419,53 +303,194 @@ async def get_summary_by_ticker(ticker: str):
             WHERE css.ticker = %(ticker)s
               AND c.is_deleted = FALSE
         """
-        
         summaries = db.execute_query(query, {"ticker": ticker.upper()})
-        
         if not summaries:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No summary found for {ticker}"
-            )
-        
+            raise HTTPException(status_code=404, detail=f"No summary found for {ticker}")
         return summaries[0]
-        
     finally:
         db.close()
+
+
+# ============================================================================
+# HELPERS
+# ============================================================================
+
+def _fetch_category_scores_from_db(db: SnowflakeService, company_id: str) -> dict[str, int]:
+    """
+    Aggregate category scores from Snowflake external_signals for this company.
+    Uses AVG(normalized_score) per category.
+    """
+    rows = db.execute_query(
+        """
+        SELECT category, AVG(normalized_score) AS avg_score
+        FROM external_signals
+        WHERE company_id = %(company_id)s
+        GROUP BY category
+        """,
+        {"company_id": company_id},
+    )
+
+    by_cat: dict[str, int] = {}
+    for r in rows:
+        cat = r.get("category")
+        avg_score = r.get("avg_score")
+        if cat and avg_score is not None:
+            by_cat[str(cat)] = int(round(float(avg_score)))
+
+    return {
+        "jobs": by_cat.get("technology_hiring", 0),
+        "tech": by_cat.get("digital_presence", 0),
+        "patents": by_cat.get("innovation_activity", 0),
+        "leadership": by_cat.get("leadership_signals", 0),
+    }
+
+
+def _count_total_signals(db: SnowflakeService, company_id: str) -> int:
+    """
+    Total number of signals for a company in external_signals.
+    We use this for company_signal_summaries.signal_count so the upsert doesn't
+    depend on "inserted_count this run".
+    """
+    rows = db.execute_query(
+        """
+        SELECT COUNT(*) AS n
+        FROM external_signals
+        WHERE company_id = %(company_id)s
+        """,
+        {"company_id": company_id},
+    )
+    if not rows:
+        return 0
+    return int(rows[0].get("n") or 0)
+
+
+def _leadership_signal_from_latest_board(
+    db: SnowflakeService, company_id: str, ticker: str
+) -> Optional[ExternalSignal]:
+    """
+    Create ONE aggregated leadership_signals ExternalSignal from the latest
+    board_governance_signals row for this company.
+    """
+    rows = db.execute_query(
+        """
+        SELECT
+            id,
+            ticker,
+            governance_score,
+            has_tech_committee,
+            has_ai_expertise,
+            has_data_officer,
+            has_independent_majority,
+            has_risk_tech_oversight,
+            has_ai_strategy,
+            ai_experts,
+            evidence,
+            confidence,
+            created_at
+        FROM board_governance_signals
+        WHERE company_id = %(company_id)s
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        {"company_id": company_id},
+    )
+
+    if not rows:
+        return None
+
+    r = rows[0]
+
+    flags = {
+        "has_tech_committee": bool(r.get("has_tech_committee")),
+        "has_ai_expertise": bool(r.get("has_ai_expertise")),
+        "has_data_officer": bool(r.get("has_data_officer")),
+        "has_independent_majority": bool(r.get("has_independent_majority")),
+        "has_risk_tech_oversight": bool(r.get("has_risk_tech_oversight")),
+        "has_ai_strategy": bool(r.get("has_ai_strategy")),
+    }
+
+    meta = {
+        "source_table": "board_governance_signals",
+        "board_governance_signal_id": str(r.get("id")),
+        "ticker": str(r.get("ticker") or ticker),
+        "flags": flags,
+        "ai_experts": r.get("ai_experts"),
+        "evidence": r.get("evidence"),
+        "confidence": float(r.get("confidence") or 0.0),
+        "created_at": str(r.get("created_at")),
+    }
+
+    meta_json = json.dumps(meta, default=str)
+
+    return ExternalSignal(
+        id=f"{company_id}-leadership-board-{r.get('id')}",
+        company_id=company_id,
+        category=SignalCategory.LEADERSHIP_SIGNALS,
+        source=SignalSource.external,
+        signal_date=datetime.utcnow(),
+        score=int(round(float(r.get("governance_score") or 0.0))),
+        title="Board governance & AI oversight (SEC DEF 14A)",
+        url=None,
+        metadata_json=meta_json,
+    )
 
 
 # ============================================================================
 # BACKGROUND TASKS - THE WORKERS
 # ============================================================================
 
+@router.post("/collect/internal/run/{ticker}")
+async def run_collection_inline_for_debug(ticker: str):
+    """
+    Optional helper to run collection inline without BackgroundTasks.
+    """
+    db = SnowflakeService()
+    try:
+        companies = db.execute_query(
+            """
+            SELECT id, name, ticker
+            FROM companies
+            WHERE ticker = %(ticker)s AND is_deleted = FALSE
+            """,
+            {"ticker": ticker.upper()},
+        )
+        if not companies:
+            raise HTTPException(status_code=404, detail=f"Company '{ticker}' not found")
+
+        company = companies[0]
+        await run_comprehensive_collection_task(
+            company_id=company["id"],
+            company_name=company["name"],
+            ticker=ticker.upper(),
+            years=5,
+            job_location="United States",
+        )
+        return {"ok": True, "ticker": ticker.upper()}
+    finally:
+        db.close()
+
+
 async def run_comprehensive_collection_task(
     company_id: str,
     company_name: str,
     ticker: str,
     years: int,
-    job_location: str
+    job_location: str,
 ):
     """
     COMPREHENSIVE collection - ALL AI/ML jobs, no limits!
     """
+    db = SnowflakeService()
     try:
-        db = SnowflakeService()
-        all_signals = []
-        
-        logger.info(
-            "🚀 Starting comprehensive collection",
-            ticker=ticker,
-            company_id=company_id,
-            company_name=company_name
-        )
-        
+        all_signals: list[ExternalSignal] = []
+
+        logger.info("🚀 Starting comprehensive collection", ticker=ticker, company_id=company_id, company_name=company_name)
+
         # ========================================
         # 1. JOBS - COMPREHENSIVE SEARCH
         # ========================================
         try:
             all_jobs = []
-            
-            # All AI/ML job types - NO FILTERS!
             comprehensive_searches = [
                 "machine learning engineer",
                 "data scientist",
@@ -480,38 +505,26 @@ async def run_comprehensive_collection_task(
                 "data engineer machine learning",
                 "AI researcher",
                 "ML platform engineer",
-                "AI product manager"
+                "AI product manager",
             ]
-            
-            logger.info(
-                "Starting comprehensive job search",
-                queries=len(comprehensive_searches),
-                ticker=ticker
-            )
-            
+
+            logger.info("Starting comprehensive job search", queries=len(comprehensive_searches), ticker=ticker)
+
             for search_query in comprehensive_searches:
                 try:
                     jobs = scrape_job_postings(
                         search_query=search_query,
                         sources=["indeed", "google"],
                         location=job_location,
-                        max_results_per_source=100,  # HIGH LIMIT!
-                        target_company_name=company_name
+                        max_results_per_source=100,
+                        target_company_name=company_name,
                     )
                     all_jobs.extend(jobs)
                     if jobs:
-                        logger.info(
-                            f"✓ Query found jobs",
-                            query=search_query[:30],
-                            count=len(jobs)
-                        )
+                        logger.info("✓ Query found jobs", query=search_query[:30], count=len(jobs))
                 except Exception as e:
-                    logger.warning(
-                        f"Search query failed",
-                        query=search_query,
-                        error=str(e)
-                    )
-            
+                    logger.warning("Search query failed", query=search_query, error=str(e))
+
             # Deduplicate by URL
             seen_urls = set()
             unique_jobs = []
@@ -522,42 +535,32 @@ async def run_comprehensive_collection_task(
                         seen_urls.add(job_url)
                         unique_jobs.append(job)
                 else:
-                    # Keep jobs without URLs
                     unique_jobs.append(job)
-            
+
             job_signals = job_postings_to_signals(company_id, unique_jobs)
             all_signals.extend(job_signals)
-            
-            logger.info(
-                "✅ Jobs collection complete",
-                total_found=len(all_jobs),
-                unique=len(unique_jobs),
-                signals=len(job_signals)
-            )
-            
+
+            logger.info("✅ Jobs collection complete", total_found=len(all_jobs), unique=len(unique_jobs), signals=len(job_signals))
         except Exception as e:
-            logger.error("Job collection failed", error=str(e))
-        
+            logger.exception("Job collection failed", error=str(e))
+
         # ========================================
         # 2. TECH STACK
         # ========================================
         try:
             domain = db.get_primary_domain_by_company_id(company_id)
             if domain:
-                tech_inputs = scrape_tech_signal_inputs(
-                    company=company_name,
-                    company_domain_or_url=domain
-                )
+                tech_inputs = scrape_tech_signal_inputs(company=company_name, company_domain_or_url=domain)
                 tech_signals = tech_inputs_to_signals(company_id, tech_inputs)
                 all_signals.extend(tech_signals)
                 logger.info("✅ Tech stack collected", count=len(tech_signals))
             else:
                 logger.warning("⚠️ No domain found, skipping tech signals")
         except Exception as e:
-            logger.error("Tech collection failed", error=str(e))
-        
+            logger.exception("Tech collection failed", error=str(e))
+
         # ========================================
-        # 3. PATENTS - YOUR CODE!
+        # 3. PATENTS
         # ========================================
         try:
             uspto_name = COMPANY_USPTO_NAMES.get(ticker)
@@ -566,183 +569,124 @@ async def run_comprehensive_collection_task(
                     company_id=company_id,
                     company_name=company_name,
                     uspto_name=uspto_name,
-                    years=years
+                    years=years,
                 )
                 all_signals.extend(patent_signals)
-                patent_score = patent_signals[0].score if patent_signals else 0
-                logger.info(
-                    "✅ Patents collected",
-                    count=len(patent_signals),
-                    score=patent_score
-                )
+                logger.info("✅ Patents collected", count=len(patent_signals), score=(patent_signals[0].score if patent_signals else 0))
             else:
                 logger.warning("⚠️ No USPTO name mapping", ticker=ticker)
         except Exception as e:
-            logger.error("Patent collection failed", error=str(e))
-        
+            logger.exception("Patent collection failed", error=str(e))
+
         # ========================================
-        # 4. LEADERSHIP
+        # 4. LEADERSHIP (REAL: from board_governance_signals)
         # ========================================
         try:
-            leadership_profiles = scrape_leadership_profiles_mock(company=company_name)
-    
-    # Import the aggregated function
-            from app.pipelines.leadership_signals import leadership_profiles_to_aggregated_signal
-    
-            leadership_signal = leadership_profiles_to_aggregated_signal(company_id, leadership_profiles)  # ✅ 1 signal
-            all_signals.append(leadership_signal)  # ✅ Adds 1
-    
-            logger.info(
-                 "✅ Leadership aggregated",
-                execs=len(leadership_profiles),
-                score=leadership_signal.score
-        )
-            
+            leadership_signal = _leadership_signal_from_latest_board(db, company_id=company_id, ticker=ticker)
+            if leadership_signal:
+                all_signals.append(leadership_signal)
+                logger.info("✅ Leadership aggregated (from board)", score=leadership_signal.score)
+            else:
+                logger.warning("⚠️ No board governance signal found; leadership score will be 0", ticker=ticker)
         except Exception as e:
             logger.exception("❌ Leadership pipeline failed", error=str(e))
-        
+
         # ========================================
-        # CALCULATE SCORES
+        # STORE IN SNOWFLAKE + RE-AGGREGATE SCORES FROM DB
         # ========================================
-        from statistics import mean
-        
-        def calc_category_score(category):
-            matching = [s.score for s in all_signals if s.category == category]
-            return int(round(mean(matching))) if matching else 0
-        
-        jobs_score = calc_category_score(SignalCategory.jobs)
-        tech_score = calc_category_score(SignalCategory.tech)
-        patents_score = calc_category_score(SignalCategory.patents)
-        leadership_score = calc_category_score(SignalCategory.leadership)
-        
-        # Build summary
+        inserted_count = 0
+        if all_signals:
+            inserted_count = db.insert_external_signals(all_signals)
+
+        scores = _fetch_category_scores_from_db(db, company_id=company_id)
+        total_signal_count = _count_total_signals(db, company_id=company_id)
+
         summary = build_company_signal_summary(
             company_id=company_id,
-            jobs_score=jobs_score,
-            tech_score=tech_score,
-            patents_score=patents_score,
-            leadership_score=leadership_score
+            jobs_score=scores["jobs"],
+            tech_score=scores["tech"],
+            patents_score=scores["patents"],
+            leadership_score=scores["leadership"],
         )
-        
-        # ========================================
-        # STORE IN SNOWFLAKE
-        # ========================================
-        if all_signals:
-            count = db.insert_external_signals(all_signals)
-            db.upsert_company_signal_summary(summary, signal_count=count)
-            
-            logger.info(
-                "🎉 Collection complete!",
-                ticker=ticker,
-                total_signals=count,
-                jobs_score=jobs_score,
-                tech_score=tech_score,
-                patents_score=patents_score,
-                leadership_score=leadership_score,
-                composite_score=summary.composite_score
-            )
-        else:
-            logger.warning("⚠️ No signals collected", ticker=ticker)
-        
-        db.close()
-        
-    except Exception as e:
-        logger.error(
-            "❌ Collection failed",
+
+        # IMPORTANT: write total count (not just inserted_count)
+        db.upsert_company_signal_summary(summary, signal_count=total_signal_count)
+
+        logger.info(
+            "🎉 Collection complete!",
             ticker=ticker,
-            error=str(e)
+            inserted_signals=inserted_count,
+            total_signals=total_signal_count,
+            jobs_score=scores["jobs"],
+            tech_score=scores["tech"],
+            patents_score=scores["patents"],
+            leadership_score=scores["leadership"],
+            composite_score=summary.composite_score,
         )
 
+    except Exception as e:
+        logger.error("❌ Collection failed", ticker=ticker, error=str(e))
+    finally:
+        db.close()
 
-async def run_patent_only_task(
-    company_id: str,
-    company_name: str,
-    ticker: str,
-    years: int
-):
-    """Background task - Patents only."""
+
+async def run_patent_only_task(company_id: str, company_name: str, ticker: str, years: int):
     try:
         db = SnowflakeService()
-        
+
         uspto_name = COMPANY_USPTO_NAMES.get(ticker)
         if not uspto_name:
             logger.error("No USPTO mapping", ticker=ticker)
             return
-        
-        # Collect patents
+
         patent_signals = await collect_patent_signals_real(
             company_id=company_id,
             company_name=company_name,
             uspto_name=uspto_name,
-            years=years
+            years=years,
         )
-        
+
+        inserted_count = 0
         if patent_signals:
-            count = db.insert_external_signals(patent_signals)
-            
-            # Get existing scores to preserve them
-            summary_query = """
-                SELECT 
-                    COALESCE(technology_hiring_score, 0) as jobs_score,
-                    COALESCE(digital_presence_score, 0) as tech_score,
-                    COALESCE(leadership_signals_score, 0) as leadership_score
-                FROM company_signal_summaries
-                WHERE company_id = %(company_id)s
-            """
-            existing = db.execute_query(summary_query, {"company_id": company_id})
-            
-            if existing:
-                jobs_score = int(existing[0]['jobs_score'])
-                tech_score = int(existing[0]['tech_score'])
-                leadership_score = int(existing[0]['leadership_score'])
-            else:
-                jobs_score = tech_score = leadership_score = 0
-            
-            patents_score = patent_signals[0].score
-            
-            summary = build_company_signal_summary(
-                company_id=company_id,
-                jobs_score=jobs_score,
-                tech_score=tech_score,
-                patents_score=patents_score,
-                leadership_score=leadership_score
-            )
-            
-            db.upsert_company_signal_summary(summary, signal_count=count)
-            
-            logger.info(
-                "✅ Patents collected",
-                ticker=ticker,
-                score=patents_score,
-                composite=summary.composite_score
-            )
-        
-        db.close()
-        
+            inserted_count = db.insert_external_signals(patent_signals)
+
+        scores = _fetch_category_scores_from_db(db, company_id=company_id)
+        total_signal_count = _count_total_signals(db, company_id=company_id)
+
+        summary = build_company_signal_summary(
+            company_id=company_id,
+            jobs_score=scores["jobs"],
+            tech_score=scores["tech"],
+            patents_score=scores["patents"],
+            leadership_score=scores["leadership"],
+        )
+        db.upsert_company_signal_summary(summary, signal_count=total_signal_count)
+
+        logger.info("✅ Patents collected", ticker=ticker, inserted=inserted_count, total=total_signal_count, composite=summary.composite_score)
+
     except Exception as e:
         logger.error("Patent task failed", ticker=ticker, error=str(e))
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 
-async def run_jobs_only_task(
-    company_id: str,
-    company_name: str,
-    ticker: str,
-    job_location: str
-):
-    """Background task - Jobs only."""
+async def run_jobs_only_task(company_id: str, company_name: str, ticker: str, job_location: str):
     try:
         db = SnowflakeService()
         all_jobs = []
-        
+
         searches = [
             "machine learning engineer",
             "data scientist",
             "AI engineer",
             "MLOps engineer",
             "deep learning",
-            "NLP engineer"
+            "NLP engineer",
         ]
-        
+
         for query in searches:
             try:
                 jobs = scrape_job_postings(
@@ -750,13 +694,12 @@ async def run_jobs_only_task(
                     sources=["indeed", "google"],
                     location=job_location,
                     max_results_per_source=100,
-                    target_company_name=company_name
+                    target_company_name=company_name,
                 )
                 all_jobs.extend(jobs)
             except Exception as e:
                 logger.warning(f"Query '{query}' failed", error=str(e))
-        
-        # Deduplicate
+
         seen = set()
         unique = []
         for job in all_jobs:
@@ -765,54 +708,63 @@ async def run_jobs_only_task(
                 unique.append(job)
             elif not job.url:
                 unique.append(job)
-        
+
+        inserted_count = 0
         if unique:
             job_signals = job_postings_to_signals(company_id, unique)
-            count = db.insert_external_signals(job_signals)
-            
-            logger.info(
-                "✅ Jobs collected",
-                ticker=ticker,
-                total=len(all_jobs),
-                unique=len(unique),
-                signals=count
-            )
-        
-        db.close()
-        
+            inserted_count = db.insert_external_signals(job_signals)
+
+        scores = _fetch_category_scores_from_db(db, company_id=company_id)
+        total_signal_count = _count_total_signals(db, company_id=company_id)
+
+        summary = build_company_signal_summary(
+            company_id=company_id,
+            jobs_score=scores["jobs"],
+            tech_score=scores["tech"],
+            patents_score=scores["patents"],
+            leadership_score=scores["leadership"],
+        )
+        db.upsert_company_signal_summary(summary, signal_count=total_signal_count)
+
+        logger.info("✅ Jobs collected", ticker=ticker, inserted=inserted_count, total=total_signal_count, jobs_score=scores["jobs"], composite=summary.composite_score)
+
     except Exception as e:
         logger.error("Jobs task failed", ticker=ticker, error=str(e))
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 
 async def run_batch_collection_task(years: int):
-    """Batch collection for all companies."""
     try:
         for ticker in COMPANY_USPTO_NAMES.keys():
             db = SnowflakeService()
-            
             try:
-                company_query = """
-                    SELECT id, name FROM companies
+                companies = db.execute_query(
+                    """
+                    SELECT id, name
+                    FROM companies
                     WHERE ticker = %(ticker)s AND is_deleted = FALSE
-                """
-                companies = db.execute_query(company_query, {"ticker": ticker})
-                
+                    """,
+                    {"ticker": ticker},
+                )
+
                 if companies:
                     await run_comprehensive_collection_task(
-                        company_id=companies[0]['id'],
-                        company_name=companies[0]['name'],
+                        company_id=companies[0]["id"],
+                        company_name=companies[0]["name"],
                         ticker=ticker,
                         years=years,
-                        job_location="United States"
+                        job_location="United States",
                     )
-                    
-                    # Delay between companies
+
                     import asyncio
                     await asyncio.sleep(30)
+
             finally:
                 db.close()
-                
+
     except Exception as e:
         logger.error("Batch collection failed", error=str(e))
-
-        

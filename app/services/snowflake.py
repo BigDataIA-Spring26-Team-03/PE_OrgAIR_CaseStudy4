@@ -146,6 +146,7 @@ class SnowflakeService:
                 meta_sql_literal = _sql_escape_string_literal(meta_json)
 
                 # Inline JSON literal so PARSE_JSON definitely returns VARIANT
+                meta_dollar = meta_json.replace("$$", "$ $")
                 query = f"""
                     INSERT INTO external_signals
                         (id, company_id, category, source, signal_date, raw_value, normalized_score, confidence, metadata)
@@ -158,7 +159,7 @@ class SnowflakeService:
                         %(raw_value)s,
                         %(normalized_score)s,
                         %(confidence)s,
-                        PARSE_JSON('{meta_sql_literal}')
+                        PARSE_JSON($${meta_dollar}$$)
                 """
 
                 params = {
