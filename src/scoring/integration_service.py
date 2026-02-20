@@ -789,9 +789,9 @@ class ScoringIntegrationService:
                 """, {
                     "id": assessment_id,
                     "company_id": company_id,
-                    "assessment_type": "SCREENING",
+                    "assessment_type": "screening",
                     "assessment_date": now.date(),
-                    "status": "complete",
+                    "status": "approved",
                     "primary_assessor": "OrgAIR_Pipeline_v1",
                     "secondary_assessor": None,
                     "v_r_score": results["final_score"],

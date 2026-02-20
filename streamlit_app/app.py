@@ -87,14 +87,15 @@ page = st.sidebar.radio(
         "🏢 Companies",
         "📋 Assessments",
         "📊 Dimension Scores",
-        "🎯 Signal Collection",    # CS2
-        "📈 Signal Analytics",      # CS2
-        "🔬 Patent Deep Dive",      # CS2
-        "📄 SEC Documents",         # CS2
+        "🎯 Signal Collection",
+        "📈 Signal Analytics",
+        "🔬 Patent Deep Dive",
+        "📄 SEC Documents",
+        "🚀 Score Company (CS3)",      # ← ADD THIS
+        "⭐ CS3: Org-AI-R Results",
         "🔧 System Health"
     ]
 )
-
 st.sidebar.markdown("---")
 st.sidebar.caption("**Case Study 1:** Platform Foundation ✅")
 st.sidebar.caption("**Case Study 2:** Evidence Collection ✅")
@@ -1037,6 +1038,802 @@ elif page == "📄 SEC Documents":
         
         except Exception as e:
             st.error(f"Error: {e}")
+
+
+# ============================================
+# ⭐ CS3: ORG-AI-R RESULTS (NEW!)
+# ============================================
+elif page == "⭐ CS3: Org-AI-R Results":
+    st.markdown('<p class="main-header">⭐ CS3: Org-AI-R Scoring Results</p>', unsafe_allow_html=True)
+    st.caption("Organizational AI Readiness - Complete Assessment")
+    
+    # Load CS3 results
+    @st.cache_data
+    def load_org_air_results():
+        import json
+        from pathlib import Path
+        
+        results = []
+        results_dir = Path("results")
+        
+        for file in results_dir.glob("*_org_air_result.json"):
+            try:
+                with open(file) as f:
+                    data = json.load(f)
+                    results.append(data)
+            except Exception as e:
+                st.warning(f"Error loading {file.name}: {e}")
+        
+        return sorted(results, key=lambda x: x.get('final_score', 0), reverse=True)
+    
+    try:
+        companies = load_org_air_results()
+        
+        if not companies:
+            st.warning("⚠️ No Org-AI-R results found!")
+            st.info("Run: `poetry run python scripts/score_all_5.py`")
+            st.stop()
+        
+        # Sub-navigation
+        view = st.radio(
+            "Select View",
+            ["📊 Portfolio Overview", "🔍 Company Detail", "📈 Component Analysis", "🎯 Evidence Analysis"],
+            horizontal=True
+        )
+        
+        st.markdown("---")
+        
+        # =========================================================================
+        # VIEW 1: PORTFOLIO OVERVIEW
+        # =========================================================================
+        
+        if view == "📊 Portfolio Overview":
+            st.subheader("5-Company Portfolio - Org-AI-R Scores")
+            
+            # Top metrics
+            col1, col2, col3, col4, col5 = st.columns(5)
+            
+            avg_score = sum(c['final_score'] for c in companies) / len(companies)
+            avg_vr = sum(c['vr_score'] for c in companies) / len(companies)
+            avg_hr = sum(c['hr_score'] for c in companies) / len(companies)
+            top = companies[0]
+            total_evidence = sum(c.get('confidence', {}).get('evidence_count', 0) for c in companies)
+            
+            with col1:
+                st.metric("Portfolio Avg", f"{avg_score:.2f}")
+            with col2:
+                st.metric("Avg VR", f"{avg_vr:.2f}")
+            with col3:
+                st.metric("Avg HR", f"{avg_hr:.2f}")
+            with col4:
+                st.metric("Top Performer", f"{top['ticker']}")
+            with col5:
+                st.metric("Total Evidence", total_evidence)
+            
+            # Company scores table
+            st.markdown("---")
+            st.markdown("#### 📊 All Companies")
+            
+            df = pd.DataFrame([
+                {
+                    "Rank": i,
+                    "Ticker": c['ticker'],
+                    "Company": c['company_name'],
+                    "Sector": c['sector'],
+                    "Org-AI-R": round(c['final_score'], 2),
+                    "VR": round(c['vr_score'], 2),
+                    "HR": round(c['hr_score'], 2),
+                    "Synergy": round(c['synergy_score'], 2),
+                    "Evidence": c.get('confidence', {}).get('evidence_count', 0),
+                    "CI Width": round(c['confidence']['ci_upper'] - c['confidence']['ci_lower'], 2)
+                }
+                for i, c in enumerate(companies, 1)
+            ])
+            
+            # Color-code scores
+            def color_score(val):
+                if pd.isna(val) or not isinstance(val, (int, float)):
+                    return ''
+                if val >= 70:
+                    return 'background-color: #d4edda; color: #155724;'
+                elif val >= 50:
+                    return 'background-color: #fff3cd; color: #856404;'
+                else:
+                    return 'background-color: #f8d7da; color: #721c24;'
+            
+            styled = df.style.applymap(
+                color_score,
+                subset=['Org-AI-R', 'VR', 'HR', 'Synergy']
+            )
+            
+            st.dataframe(styled, use_container_width=True, hide_index=True)
+            
+            # Bar chart comparison
+            st.markdown("---")
+            st.markdown("#### 📊 Score Comparison")
+            
+            fig = go.Figure()
+            
+            fig.add_trace(go.Bar(
+                name='Org-AI-R (Final)',
+                x=df['Ticker'],
+                y=df['Org-AI-R'],
+                marker_color='#1f77b4',
+                text=df['Org-AI-R'].round(1),
+                textposition='outside'
+            ))
+            
+            fig.add_trace(go.Bar(
+                name='VR (Company)',
+                x=df['Ticker'],
+                y=df['VR'],
+                marker_color='#ff7f0e'
+            ))
+            
+            fig.add_trace(go.Bar(
+                name='HR (Sector)',
+                x=df['Ticker'],
+                y=df['HR'],
+                marker_color='#2ca02c'
+            ))
+            
+            fig.update_layout(
+                barmode='group',
+                yaxis_title="Score (0-100)",
+                height=450,
+                yaxis_range=[0, 110]
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Scatter plot
+            st.markdown("---")
+            st.markdown("#### 🎯 VR vs HR Positioning")
+            
+            fig = px.scatter(
+                df,
+                x='VR',
+                y='HR',
+                size='Org-AI-R',
+                color='Sector',
+                text='Ticker',
+                hover_data=['Company', 'Org-AI-R', 'Evidence'],
+                labels={'VR': 'VR (Company Readiness)', 'HR': 'HR (Sector Opportunity)'}
+            )
+            
+            fig.update_traces(textposition='top center')
+            fig.update_layout(height=500)
+            
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # =========================================================================
+        # VIEW 2: COMPANY DETAIL
+        # =========================================================================
+        
+        elif view == "🔍 Company Detail":
+            st.subheader("Company Deep Dive")
+            
+            # Company selector
+            selected = st.selectbox(
+                "Select Company",
+                options=[f"{c['ticker']} - {c['company_name']}" for c in companies],
+                index=0
+            )
+            
+            ticker = selected.split(" - ")[0]
+            company = next(c for c in companies if c['ticker'] == ticker)
+            
+            # Header
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.markdown(f"## {company['company_name']}")
+                st.caption(f"**{company['ticker']}** | **Sector:** {company['sector']}")
+            with col2:
+                score = company['final_score']
+                score_class = "score-high" if score >= 70 else "score-medium" if score >= 50 else "score-low"
+                st.markdown(f'<div class="{score_class}">Org-AI-R: {score:.2f}</div>', unsafe_allow_html=True)
+            
+            st.markdown("---")
+            
+            # Key metrics
+            st.markdown("#### 📊 Core Components")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("VR (Company)", f"{company['vr_score']:.2f}", 
+                         help="Idiosyncratic Readiness - Company-specific AI capabilities")
+            with col2:
+                st.metric("HR (Sector)", f"{company['hr_score']:.2f}",
+                         help="Horizon Readiness - Sector AI maturity")
+            with col3:
+                st.metric("Synergy", f"{company['synergy_score']:.2f}",
+                         help="VR×HR interaction with alignment & timing factors")
+            with col4:
+                st.metric("Position Factor", f"{company['position_factor']:.3f}",
+                         help="Company position vs sector peers (-1 to 1)")
+            
+            # Formula breakdown
+            with st.expander("📐 Formula Breakdown"):
+                st.latex(r"\text{Org-AI-R} = (1 - \beta) \cdot [\alpha \cdot VR + (1-\alpha) \cdot HR] + \beta \cdot \text{Synergy}")
+                st.markdown(f"""
+                - **α = 0.60** (60% company-specific, 40% sector)
+                - **β = 0.12** (88% base, 12% synergy)
+                - **VR** = {company['vr_score']:.2f}
+                - **HR** = {company['hr_score']:.2f}
+                - **Synergy** = {company['synergy_score']:.2f}
+                - **Result** = {company['final_score']:.2f}
+                """)
+            
+            st.markdown("---")
+            
+            # Dimension scores
+            st.markdown("#### 📋 7 Dimension Breakdown")
+            
+            dims = company['dimension_scores']
+            
+            # Radar chart + table
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                fig = go.Figure()
+                
+                fig.add_trace(go.Scatterpolar(
+                    r=[dims[d]['score'] for d in dims],
+                    theta=[d.replace("_", " ").title() for d in dims],
+                    fill='toself',
+                    name=ticker,
+                    line_color='#1f77b4'
+                ))
+                
+                fig.update_layout(
+                    polar=dict(
+                        radialaxis=dict(
+                            visible=True,
+                            range=[0, 100],
+                            tickfont=dict(size=10)
+                        )
+                    ),
+                    height=400,
+                    showlegend=False
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                dim_df = pd.DataFrame([
+                    {
+                        "Dimension": d.replace("_", " ").title(),
+                        "Score": round(data['score'], 1),
+                        "Conf": round(data['confidence'], 2),
+                        "Sources": len(data.get('contributing_sources', []))
+                    }
+                    for d, data in dims.items()
+                ])
+                
+                st.dataframe(dim_df, use_container_width=True, hide_index=True, height=400)
+            
+            # Confidence interval
+            st.markdown("---")
+            st.markdown("#### 📊 Confidence & Reliability")
+            
+            ci = company['confidence']
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Lower Bound (95%)", f"{ci['ci_lower']:.2f}")
+            with col2:
+                st.metric("Upper Bound (95%)", f"{ci['ci_upper']:.2f}")
+            with col3:
+                st.metric("SEM", f"{ci['sem']:.2f}", 
+                         help="Standard Error of Mean")
+            with col4:
+                reliability = ci.get('reliability', 0)
+                if isinstance(reliability, str):
+                    st.metric("Reliability", reliability)
+                else:
+                    st.metric("Reliability", f"{reliability:.1%}")
+            
+            # Confidence interval visualization
+            fig = go.Figure()
+            
+            fig.add_trace(go.Scatter(
+                x=[ticker],
+                y=[company['final_score']],
+                error_y=dict(
+                    type='data',
+                    symmetric=False,
+                    array=[ci['ci_upper'] - company['final_score']],
+                    arrayminus=[company['final_score'] - ci['ci_lower']]
+                ),
+                mode='markers',
+                marker=dict(size=15, color='#1f77b4'),
+                name='Org-AI-R'
+            ))
+            
+            fig.update_layout(
+                title="95% Confidence Interval",
+                yaxis_title="Score",
+                yaxis_range=[0, 100],
+                height=300
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.info(f"**Evidence Count:** {ci['evidence_count']} sources | **CI Width:** {ci['ci_upper'] - ci['ci_lower']:.2f} points")
+        
+        # =========================================================================
+        # VIEW 3: COMPONENT ANALYSIS
+        # =========================================================================
+        
+        elif view == "📈 Component Analysis":
+            st.subheader("Score Component Analysis")
+            
+            # Component breakdown table
+            st.markdown("#### 📊 Component Scores by Company")
+            
+            comp_df = pd.DataFrame([
+                {
+                    "Ticker": c['ticker'],
+                    "Company": c['company_name'][:25],
+                    "VR": round(c['vr_score'], 2),
+                    "HR": round(c['hr_score'], 2),
+                    "Synergy": round(c['synergy_score'], 2),
+                    "Position Factor": round(c['position_factor'], 3),
+                    "Talent Conc.": round(c['talent_concentration'], 3),
+                    "Org-AI-R": round(c['final_score'], 2)
+                }
+                for c in companies
+            ])
+            
+            st.dataframe(comp_df, use_container_width=True, hide_index=True)
+            
+            # Grouped bar chart
+            st.markdown("---")
+            st.markdown("#### Component Comparison")
+            
+            fig = go.Figure()
+            
+            components = ['VR', 'HR', 'Synergy']
+            colors = ['#3498db', '#2ecc71', '#e74c3c']
+            
+            for comp, color in zip(components, colors):
+                fig.add_trace(go.Bar(
+                    name=comp,
+                    x=comp_df['Ticker'],
+                    y=comp_df[comp],
+                    marker_color=color,
+                    text=comp_df[comp].round(1),
+                    textposition='outside'
+                ))
+            
+            fig.update_layout(
+                barmode='group',
+                yaxis_title="Score",
+                height=450,
+                yaxis_range=[0, 110]
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Dimension heatmap
+            st.markdown("---")
+            st.markdown("#### 🔥 Dimension Heatmap")
+            
+            dimension_names = [
+                "data_infrastructure", "ai_governance", "technology_stack",
+                "talent", "leadership", "use_case_portfolio", "culture"
+            ]
+            
+            heatmap_data = []
+            for c in companies:
+                row = [c['dimension_scores'][dim]['score'] for dim in dimension_names]
+                heatmap_data.append(row)
+            
+            fig = go.Figure(data=go.Heatmap(
+                z=heatmap_data,
+                x=[d.replace("_", " ").title() for d in dimension_names],
+                y=[c['ticker'] for c in companies],
+                colorscale='RdYlGn',
+                zmin=0,
+                zmax=100,
+                text=[[f"{val:.1f}" for val in row] for row in heatmap_data],
+                texttemplate='%{text}',
+                textfont={"size": 12}
+            ))
+            
+            fig.update_layout(height=350)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Sector analysis
+            st.markdown("---")
+            st.markdown("#### 🏭 Sector Performance")
+            
+            sector_data = {}
+            for c in companies:
+                sector = c['sector']
+                if sector not in sector_data:
+                    sector_data[sector] = {'scores': [], 'count': 0}
+                sector_data[sector]['scores'].append(c['final_score'])
+                sector_data[sector]['count'] += 1
+            
+            sector_df = pd.DataFrame([
+                {
+                    "Sector": sector,
+                    "Companies": data['count'],
+                    "Avg Score": round(sum(data['scores']) / len(data['scores']), 2),
+                    "Best": round(max(data['scores']), 2)
+                }
+                for sector, data in sector_data.items()
+            ])
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.dataframe(sector_df, use_container_width=True, hide_index=True)
+            
+            with col2:
+                fig = px.bar(
+                    sector_df,
+                    x='Sector',
+                    y='Avg Score',
+                    color='Avg Score',
+                    color_continuous_scale='RdYlGn',
+                    text='Avg Score'
+                )
+                fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+                fig.update_layout(height=300, yaxis_range=[0, 100])
+                st.plotly_chart(fig, use_container_width=True)
+        
+        # =========================================================================
+        # VIEW 4: EVIDENCE ANALYSIS
+        # =========================================================================
+        
+        elif view == "🎯 Evidence Analysis":
+            st.subheader("Evidence Source Analysis")
+            
+            # Company selector
+            selected = st.selectbox(
+                "Select Company",
+                options=[f"{c['ticker']} - {c['company_name']}" for c in companies],
+                index=0,
+                key="evidence_company_select"
+            )
+            
+            ticker = selected.split(" - ")[0]
+            company = next(c for c in companies if c['ticker'] == ticker)
+            
+            st.markdown(f"### {company['company_name']} - Evidence Sources")
+            
+            # Evidence summary
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Total Evidence Sources", company.get('confidence', {}).get('evidence_count', 0))
+            with col2:
+                # Count unique sources
+                all_sources = set()
+                for dim_data in company['dimension_scores'].values():
+                    all_sources.update(dim_data.get('contributing_sources', []))
+                st.metric("Unique Sources", len(all_sources))
+            with col3:
+                avg_sources = sum(len(d.get('contributing_sources', [])) for d in company['dimension_scores'].values()) / 7
+                st.metric("Avg Sources/Dimension", f"{avg_sources:.1f}")
+            
+            # Source matrix
+            st.markdown("---")
+            st.markdown("#### 📋 Evidence Source Matrix")
+            
+            all_possible_sources = [
+                "technology_hiring",
+                "innovation_activity",
+                "digital_presence",
+                "leadership_signals",
+                "glassdoor_reviews",
+                "board_composition",
+                "sec_item_1",
+                "sec_item_1a",
+                "sec_item_7"
+            ]
+            
+            # Build matrix
+            matrix_data = []
+            for dim_name, dim_data in company['dimension_scores'].items():
+                row = {"Dimension": dim_name.replace("_", " ").title()}
+                sources = dim_data.get('contributing_sources', [])
+                
+                for source in all_possible_sources:
+                    row[source.replace("_", " ").title()] = "✅" if source in sources else ""
+                
+                row["Total"] = len(sources)
+                matrix_data.append(row)
+            
+            matrix_df = pd.DataFrame(matrix_data)
+            st.dataframe(matrix_df, use_container_width=True, hide_index=True)
+            
+            # Source usage count
+            st.markdown("---")
+            st.markdown("#### 📊 Source Usage Frequency")
+            
+            source_counts = {}
+            for dim_data in company['dimension_scores'].values():
+                for source in dim_data.get('contributing_sources', []):
+                    source_counts[source] = source_counts.get(source, 0) + 1
+            
+            if source_counts:
+                source_df = pd.DataFrame([
+                    {
+                        "Source": source.replace("_", " ").title(),
+                        "Used in Dimensions": count,
+                        "Usage %": round((count / 7) * 100, 1)
+                    }
+                    for source, count in sorted(source_counts.items(), key=lambda x: x[1], reverse=True)
+                ])
+                
+                col1, col2 = st.columns([1, 1])
+                
+                with col1:
+                    st.dataframe(source_df, use_container_width=True, hide_index=True)
+                
+                with col2:
+                    fig = px.pie(
+                        source_df,
+                        values='Used in Dimensions',
+                        names='Source',
+                        title="Evidence Distribution"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+            
+            # Dimension detail with sources
+            st.markdown("---")
+            st.markdown("#### 🔍 Dimension-Level Detail")
+            
+            for dim_name, dim_data in company['dimension_scores'].items():
+                with st.expander(f"**{dim_name.replace('_', ' ').title()}** - Score: {dim_data['score']:.2f}"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.metric("Score", f"{dim_data['score']:.2f}/100")
+                        st.metric("Confidence", f"{dim_data['confidence']:.2f}")
+                    
+                    with col2:
+                        sources = dim_data.get('contributing_sources', [])
+                        st.metric("Source Count", len(sources))
+                        
+                        if sources:
+                            st.markdown("**Sources:**")
+                            for source in sources:
+                                st.caption(f"• {source.replace('_', ' ').title()}")
+    
+    except Exception as e:
+        st.error(f"Error loading CS3 results: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+
+# ============================================
+# 🚀 SCORE COMPANY (CS3)
+# ============================================
+elif page == "🚀 Score Company (CS3)":
+    st.markdown('<p class="main-header">🚀 Score Company - CS3</p>', unsafe_allow_html=True)
+    st.caption("Run the complete Org-AI-R scoring pipeline")
+    
+    try:
+        companies_list = api.list_companies(limit=100)
+        
+        if not companies_list:
+            st.warning("Add companies first!")
+        else:
+            # Company selection
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                comp_opts = [(f"{c['ticker']} - {c['name']}", c) for c in companies_list if c.get('ticker')]
+                
+                if not comp_opts:
+                    st.warning("No companies with tickers found!")
+                    st.stop()
+                
+                comp_choice = st.selectbox(
+                    "Select Company to Score",
+                    comp_opts,
+                    format_func=lambda x: x[0]
+                )
+                company = comp_choice[1]
+                ticker = company['ticker']
+            
+            with col2:
+                sector_map = {
+                    "550e8400-e29b-41d4-a716-446655440003": "Technology",
+                    "550e8400-e29b-41d4-a716-446655440005": "Financial Services",
+                    "550e8400-e29b-41d4-a716-446655440004": "Retail",
+                    "550e8400-e29b-41d4-a716-446655440001": "Industrials",
+                    "550e8400-e29b-41d4-a716-446655440002": "Healthcare"
+                }
+                
+                default_sector = sector_map.get(company.get('industry_id'), "Technology")
+                
+                sector = st.selectbox(
+                    "Sector",
+                    list(sector_map.values()),
+                    index=list(sector_map.values()).index(default_sector) if default_sector in sector_map.values() else 0
+                )
+            
+            # Pipeline info
+            with st.expander("ℹ️ Pipeline Steps", expanded=False):
+                st.markdown("""
+                **Complete Org-AI-R Pipeline:**
+                1. 📥 Fetch company data (CS1)
+                2. 📊 Fetch evidence (CS2: signals, SEC docs)
+                3. 🎭 Collect Glassdoor culture data
+                4. 👔 Collect board governance data
+                5. 🗺️ Map evidence → 7 dimensions
+                6. 🧮 Calculate: VR → PF → HR → Synergy → Org-AI-R → CI
+                7. 💾 Save to database & JSON file
+                
+                **Estimated time:** 2-3 minutes
+                """)
+            
+            st.markdown("---")
+            
+            # Score button
+            if st.button(f"🚀 Score {ticker}", type="primary", use_container_width=True):
+                
+                import requests
+                import time
+                
+                progress_placeholder = st.empty()
+                status_placeholder = st.empty()
+                
+                with progress_placeholder.container():
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                
+                try:
+                    # Start scoring
+                    status_text.text("📥 Starting scoring...")
+                    progress_bar.progress(10)
+                    
+                    response = requests.post(
+                        f"http://localhost:8000/api/v1/scoring/score/{ticker}",
+                        params={"sector": sector},
+                        timeout=10
+                    )
+                    
+                    if response.status_code != 200:
+                        st.error(f"❌ Failed to start: {response.text}")
+                        st.stop()
+                    
+                    data = response.json()
+                    task_id = data.get('task_id')
+                    
+                    status_text.text(f"✅ Task started: {task_id[:8]}...")
+                    progress_bar.progress(20)
+                    
+                    # Poll for completion
+                    max_wait = 300
+                    start_time = time.time()
+                    
+                    while time.time() - start_time < max_wait:
+                        time.sleep(5)
+                        
+                        try:
+                            status_resp = requests.get(
+                                f"http://localhost:8000/api/v1/scoring/status/{task_id}",
+                                timeout=5
+                            )
+                            
+                            if status_resp.status_code == 200:
+                                status_data = status_resp.json()
+                                current_status = status_data.get('status')
+                                elapsed = int(time.time() - start_time)
+                                
+                                if current_status == "queued":
+                                    progress_bar.progress(20)
+                                    status_text.text(f"⏳ Queued... ({elapsed}s)")
+                                
+                                elif current_status == "running":
+                                    progress = min(80, 20 + int(elapsed / 2))
+                                    progress_bar.progress(progress)
+                                    status_text.text(f"🔄 Running... ({elapsed}s)")
+                                
+                                elif current_status == "completed":
+                                    progress_bar.progress(100)
+                                    status_text.text(f"✅ Completed in {elapsed}s!")
+                                    
+                                    progress_placeholder.empty()
+                                    
+                                    st.success(f"✅ {ticker} scored successfully!")
+                                    
+                                    st.markdown("### 📊 Results")
+                                    
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    
+                                    with col1:
+                                        st.metric("Org-AI-R", f"{status_data['final_score']:.2f}")
+                                    with col2:
+                                        st.metric("VR", f"{status_data['vr_score']:.2f}")
+                                    with col3:
+                                        st.metric("HR", f"{status_data['hr_score']:.2f}")
+                                    with col4:
+                                        st.metric("Synergy", f"{status_data['synergy_score']:.2f}")
+                                    
+                                    ci = status_data.get('confidence', {})
+                                    
+                                    st.markdown("#### 📊 Confidence Interval")
+                                    col1, col2, col3 = st.columns(3)
+                                    with col1:
+                                        st.metric("Lower (95%)", f"{ci.get('ci_lower', 0):.2f}")
+                                    with col2:
+                                        st.metric("Upper (95%)", f"{ci.get('ci_upper', 0):.2f}")
+                                    with col3:
+                                        st.metric("Evidence", ci.get('evidence_count', 0))
+                                    
+                                    st.info(f"💾 Saved to: `{status_data.get('result_file', 'N/A')}`")
+                                    
+                                    with st.expander("📄 Full Results"):
+                                        st.json(status_data)
+                                    
+                                    st.balloons()
+                                    break
+                                
+                                elif current_status == "failed":
+                                    progress_placeholder.empty()
+                                    st.error(f"❌ Scoring failed!")
+                                    st.code(status_data.get('error', 'Unknown error'))
+                                    break
+                        
+                        except Exception as poll_error:
+                            st.warning(f"Status check error: {poll_error}")
+                            continue
+                    
+                    else:
+                        progress_placeholder.empty()
+                        st.error("⏱️ Scoring timed out (>5 minutes)")
+                
+                except requests.Timeout:
+                    st.error("⏱️ Request timed out")
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+                    import traceback
+                    with st.expander("Error Details"):
+                        st.code(traceback.format_exc())
+            
+            # Show existing results
+            st.markdown("---")
+            st.markdown("### 📁 Previously Scored Companies")
+            
+            try:
+                import requests
+                response = requests.get("http://localhost:8000/api/v1/scoring/results", timeout=5)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    results = data.get('results', [])
+                    
+                    if results:
+                        results_df = pd.DataFrame(results)
+                        if 'scored_at' in results_df.columns:
+                            results_df['scored_at'] = pd.to_datetime(results_df['scored_at']).dt.strftime('%Y-%m-%d %H:%M')
+                        
+                        st.dataframe(
+                            results_df[['ticker', 'company_name', 'final_score', 'vr_score', 'hr_score', 'scored_at']],
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                    else:
+                        st.info("No previous results. Score a company above!")
+            except:
+                st.info("No results available")
+    
+    except Exception as e:
+        st.error(f"Error: {e}")
+
+
+
+
+
+
 
 # ============================================
 # 🔧 SYSTEM HEALTH

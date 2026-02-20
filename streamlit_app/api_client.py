@@ -253,3 +253,25 @@ class APIClient:
             params={"limit": limit, "offset": offset}
         )
         return self._handle_response(response).json()
+    
+    def trigger_scoring_for_company(self, ticker: str, sector: str) -> dict:
+        """
+        Trigger Org-AI-R scoring for a single company.
+    
+        This calls the integration service directly (bypasses Airflow).
+        """
+    # Option 1: Direct integration service call (faster)
+        response = self._request(
+            "POST",
+            f"/api/v1/scoring/score/{ticker}",
+            params={"sector": sector}
+        )
+        return response
+
+    def get_scoring_status(self, ticker: str) -> dict:
+        """Check if scoring results exist for a company."""
+        try:
+            response = self._request("GET", f"/api/v1/scoring/results/{ticker}")
+            return response
+        except:
+            return {"status": "not_found"}
