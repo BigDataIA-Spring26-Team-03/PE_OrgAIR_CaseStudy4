@@ -18,7 +18,7 @@
 
 | Component | Link |
 |------------|------|
-| Demo Video | (Add URL) |
+| Demo Video | https://youtu.be/qa3jQ8_GIr0 |
 | Interactive Codelab | https://codelabs-preview.appspot.com/?file_id=1Iza8HTzKo2jdCG3gzKNTNFgZx7HNH_amvO5q0_4Bm_0#10 |
 
 ---
@@ -54,10 +54,71 @@ The system is composed of five major layers:
 - Org-AI-R Scoring Engine (CS3)  
 - Persistence Layer (Snowflake + Redis + S3)  
 - Visualization Layer (Streamlit)  
+## 🏗 Architecture Diagram
 
-Full architecture diagram provided in `/docs`.
+```text
++----------------------------+                 +------------------------------+
+|            User            |                 |        Airflow (8081)        |
+|   (Private Equity Viewer)  |                 |  dags/org_air_scoring_dag.py |
++-------------+--------------+                 +--------------+---------------+
+              |                                               |
+              | (views scores, triggers runs)                 | (scheduled/batch runs)
+              v                                               v
++----------------------------+                 +------------------------------+
+|     Streamlit (8501)       | <-------------> |        FastAPI (8000)         |
+| app/streamlit_app/app.py   |   REST calls    |   app.main:app + routers      |
++-------------+--------------+                 +--------------+---------------+
+              |                                               |
+              |                                               |
+              |                                               v
+              |                                +------------------------------+
+              |                                |   Integration Service Layer  |
+              |                                |  src/scoring/integration.py  |
+              |                                +--------------+---------------+
+              |                                               |
+              |                                               v
+              |                                +------------------------------+
+              |                                |   Org-AI-R Scoring Engine    |
+              |                                |        src/scoring/          |
+              |                                |------------------------------|
+              |                                | evidence_mapper.py           |
+              |                                | rubric_scorer.py             |
+              |                                | talent_concentration.py      |
+              |                                | vr_calculator.py             |
+              |                                | position_factor.py           |
+              |                                | hr_calculator.py             |
+              |                                | synergy_calculator.py        |
+              |                                | confidence.py (SEM)          |
+              |                                | org_air_calculator.py        |
+              |                                +--------------+---------------+
+              |                                               |
+              v                                               v
++----------------------------+                 +------------------------------+
+|     Redis Cache (optional) |                 |         Snowflake DB          |
+|   app/services/redis_*.py  |                 |   app/services/snowflake.py   |
++----------------------------+                 +--------------+---------------+
+                                                              ^
+                                                              |
+                                                              |  reads CS2 evidence/signals
+                                                              |
+                                      +-----------------------+------------------------+
+                                      |                Evidence Layer (CS2)            |
+                                      |              app/pipelines/ + scripts/         |
+                                      |------------------------------------------------|
+                                      | SEC EDGAR -> S3 -> parse -> chunk              |
+                                      | glassdoor_collector.py  -> Snowflake           |
+                                      | board_collector + llm_extractor -> Snowflake   |
+                                      | external_signals_orchestrator -> Snowflake     |
+                                      +-----------------------+------------------------+
 
----
+Storage:
+- AWS S3: raw/parsed SEC documents (used by CS2 pipelines)
+- Snowflake: signals + scoring outputs + confidence bounds
+- Redis: caching for repeated reads (optional)
+Ports:
+- FastAPI: 8000  | Streamlit: 8501 | Airflow: 8081
+
+```
 
 ## 📊 Org-AI-R Scoring Framework
 
@@ -391,7 +452,8 @@ Implemented:
 - SynergyCalculator  
 - SEM-based Confidence Calculator  
 - OrgAIRCalculator  
-- Integration Service (pipeline orchestration)  
+- Integration Service (pipeline orchestration)
+- Streamlit  
 
 ### Vaishnavi Srinivas
 
@@ -405,10 +467,6 @@ AI tools used during development:
 
 - ChatGPT — debugging, architectural refinement, documentation structuring, test case validation  
 - Claude — debugging support and structured test refinement  
-
-All scoring formulas, logic, and implementations were manually validated and reviewed by the team.
-
-No scoring outputs were auto-generated without verification.
 
 ---
 
