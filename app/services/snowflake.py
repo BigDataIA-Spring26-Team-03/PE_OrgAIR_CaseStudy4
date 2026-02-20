@@ -100,6 +100,14 @@ class SnowflakeService:
                 return "digital_presence"
             if c == "patents":
                 return "innovation_activity"
+            if c == "technology_hiring":   
+                return "technology_hiring"
+            if c == "digital_presence":    
+                return "digital_presence"
+            if c == "innovation_activity": 
+                return "innovation_activity"
+            if c == "leadership_signals":  
+                return "leadership_signals"
             return "leadership_signals"
 
         def _ensure_json_string(val: Any) -> str:

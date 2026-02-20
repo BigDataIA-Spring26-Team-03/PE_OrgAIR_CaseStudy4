@@ -2,66 +2,71 @@
   "ticker": "DG",
   "company_name": "Dollar General Corporation",
   "sector": "Retail",
-  "assessment_id": null,
-  "scored_at": "2026-02-20T02:16:58.048844+00:00",
-  "final_score": 49.218744,
-  "vr_score": 41.77468575,
-  "hr_score": 68.37565,
-  "synergy_score": 25.77877855,
-  "position_factor": -0.1547036,
-  "talent_concentration": 0.7,
+  "assessment_id": "815f97f7-c260-462d-8a41-fc202dfb51e5",
+  "scored_at": "2026-02-20T18:10:35.336971+00:00",
+  "final_score": 44.2056336,
+  "vr_score": 34.07474803,
+  "hr_score": 67.40545,
+  "synergy_score": 20.72882027,
+  "position_factor": -0.2471036,
+  "talent_concentration": 0.3638,
   "confidence": {
-    "ci_lower": 40.30217504,
-    "ci_upper": 58.13522496,
-    "sem": 4.549247429,
-    "reliability": 0.8944099379,
-    "evidence_count": 18
+    "ci_lower": 36.22545948,
+    "ci_upper": 52.18574052,
+    "sem": 4.071500267,
+    "reliability": 0.9154228856,
+    "evidence_count": 23
   },
   "dimension_scores": {
     "data_infrastructure": {
       "dimension": "data_infrastructure",
-      "score": 46.666666666666664,
+      "score": 27.692307692307693,
       "contributing_sources": [
         "Item 1A (Risk)",
         "Item 7 (MD&A)",
-        "innovation_activity"
+        "digital_presence",
+        "innovation_activity",
+        "technology_hiring"
       ],
-      "total_weight": 0.6,
-      "confidence": 0.984369
+      "total_weight": 1.3,
+      "confidence": 0.996152820125
     },
     "ai_governance": {
       "dimension": "ai_governance",
-      "score": 47.57142857142857,
+      "score": 40.67285714285714,
       "contributing_sources": [
         "Item 1A (Risk)",
         "board_composition",
         "leadership_signals"
       ],
       "total_weight": 1.75,
-      "confidence": 0.9854855
+      "confidence": 0.991068
     },
     "technology_stack": {
       "dimension": "technology_stack",
-      "score": 30.75,
+      "score": 23.285714285714285,
       "contributing_sources": [
         "Item 1 (Business)",
-        "innovation_activity"
+        "digital_presence",
+        "innovation_activity",
+        "technology_hiring"
       ],
-      "total_weight": 0.8,
-      "confidence": 0.9188
+      "total_weight": 1.4,
+      "confidence": 0.98001465
     },
     "talent": {
       "dimension": "talent",
-      "score": 47.875,
+      "score": 23.83,
       "contributing_sources": [
-        "glassdoor_reviews"
+        "glassdoor_reviews",
+        "technology_hiring"
       ],
-      "total_weight": 0.1,
-      "confidence": 0.665
+      "total_weight": 0.8,
+      "confidence": 0.8500875
     },
     "leadership": {
       "dimension": "leadership",
-      "score": 49.458333333333336,
+      "score": 44.126666666666665,
       "contributing_sources": [
         "Item 7 (MD&A)",
         "board_composition",
@@ -69,7 +74,7 @@
         "leadership_signals"
       ],
       "total_weight": 1.5,
-      "confidence": 0.99354480125
+      "confidence": 0.99602757
     },
     "use_case_portfolio": {
       "dimension": "use_case_portfolio",
@@ -84,13 +89,13 @@
     },
     "culture": {
       "dimension": "culture",
-      "score": 44.89473684210526,
+      "score": 46.23,
       "contributing_sources": [
         "glassdoor_reviews",
         "leadership_signals"
       ],
       "total_weight": 0.95,
-      "confidence": 0.8258
+      "confidence": 0.8928
     }
   },
   "scoring_parameters": {
