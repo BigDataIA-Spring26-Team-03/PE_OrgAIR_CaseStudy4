@@ -1,0 +1,107 @@
+{
+  "ticker": "GE",
+  "company_name": "General Electric Company",
+  "sector": "Industrials",
+  "assessment_id": null,
+  "scored_at": "2026-02-20T02:16:58.137350+00:00",
+  "final_score": 48.9357448,
+  "vr_score": 37.61773038,
+  "hr_score": 74.82312,
+  "synergy_score": 22.79885072,
+  "position_factor": 0.2614124,
+  "talent_concentration": 0.3638,
+  "confidence": {
+    "ci_lower": 40.95555948,
+    "ci_upper": 56.91584052,
+    "sem": 4.071500267,
+    "reliability": 0.9154228856,
+    "evidence_count": 23
+  },
+  "dimension_scores": {
+    "data_infrastructure": {
+      "dimension": "data_infrastructure",
+      "score": 43.23809523809524,
+      "contributing_sources": [
+        "Item 1A (Risk)",
+        "Item 7 (MD&A)",
+        "digital_presence",
+        "innovation_activity"
+      ],
+      "total_weight": 1.2,
+      "confidence": 0.990220475
+    },
+    "ai_governance": {
+      "dimension": "ai_governance",
+      "score": 46.53163265306122,
+      "contributing_sources": [
+        "Item 1A (Risk)",
+        "board_composition",
+        "leadership_signals"
+      ],
+      "total_weight": 1.75,
+      "confidence": 0.993301
+    },
+    "technology_stack": {
+      "dimension": "technology_stack",
+      "score": 29.761904761904763,
+      "contributing_sources": [
+        "Item 1 (Business)",
+        "digital_presence",
+        "innovation_activity",
+        "technology_hiring"
+      ],
+      "total_weight": 1.4,
+      "confidence": 0.952479975
+    },
+    "talent": {
+      "dimension": "talent",
+      "score": 35.10625,
+      "contributing_sources": [
+        "glassdoor_reviews",
+        "technology_hiring"
+      ],
+      "total_weight": 0.8,
+      "confidence": 0.8500875
+    },
+    "leadership": {
+      "dimension": "leadership",
+      "score": 47.53,
+      "contributing_sources": [
+        "Item 7 (MD&A)",
+        "board_composition",
+        "glassdoor_reviews",
+        "leadership_signals"
+      ],
+      "total_weight": 1.5,
+      "confidence": 0.996362905
+    },
+    "use_case_portfolio": {
+      "dimension": "use_case_portfolio",
+      "score": 53.042735042735046,
+      "contributing_sources": [
+        "Item 1 (Business)",
+        "Item 7 (MD&A)",
+        "innovation_activity"
+      ],
+      "total_weight": 1.3,
+      "confidence": 0.951308
+    },
+    "culture": {
+      "dimension": "culture",
+      "score": 30.03095238095238,
+      "contributing_sources": [
+        "glassdoor_reviews",
+        "leadership_signals",
+        "technology_hiring"
+      ],
+      "total_weight": 1.05,
+      "confidence": 0.964021
+    }
+  },
+  "scoring_parameters": {
+    "alpha": 0.6,
+    "beta": 0.12,
+    "lambda": 0.25,
+    "delta": 0.15
+  }
+}

@@ -733,18 +733,32 @@ async def collect_glassdoor_data(ticker: str, use_cache: bool = True) -> Dict:
     """
     Collect and analyze Glassdoor data for a company.
     
-    This is the main entry point used by API endpoints.
-    
-    Args:
-        ticker: Company ticker symbol
-        use_cache: Use cached data if available
-        
-    Returns:
-        Dict with culture scores and metadata
+    Returns dict with scores AND reviews.
     """
     
     collector = GlassdoorAPICollector()
+    
+    # Get reviews first
+    reviews = await collector.fetch_reviews(ticker, use_cache=use_cache, max_reviews=40)
+    
+    # Calculate scores from reviews
     culture_score = await collector.calculate_culture_score(ticker, use_cache=use_cache)
+    
+    # Convert reviews to dict format
+    reviews_list = [
+        {
+            "review_id": r.review_id,
+            "rating": r.rating,
+            "title": r.title,
+            "pros": r.pros,
+            "cons": r.cons,
+            "advice": r.advice_to_management,
+            "is_current_employee": r.is_current_employee,
+            "job_title": r.job_title,
+            "date": r.review_date.isoformat()
+        }
+        for r in reviews
+    ]
     
     return {
         "ticker": ticker,
@@ -759,6 +773,7 @@ async def collect_glassdoor_data(ticker: str, use_cache: bool = True) -> Dict:
         "individual_mentions": culture_score.signals.individual_mentions,
         "current_employee_ratio": float(culture_score.signals.current_employee_ratio),
         "rationale": culture_score.rationale,
-        "positive_keywords_found": [],  # Can populate if needed
+        "reviews": reviews_list,  # ← ADD THIS!
+        "positive_keywords_found": [],
         "negative_keywords_found": []
     }

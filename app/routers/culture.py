@@ -317,7 +317,10 @@ async def collect_by_ticker(
     """
     Collect culture data for a specific company (by ticker).
     
-    Triggers Glassdoor collector, analyzes reviews, saves to Snowflake.
+    Saves to:
+    1. Snowflake: culture_signals table (summary)
+    2. Snowflake: glassdoor_reviews table (individual reviews)
+    3. JSON file: results/{ticker}_glassdoor.json
     """
     
     # Get company_id from ticker
@@ -338,8 +341,12 @@ async def collect_by_ticker(
         
         culture_data = await collect_glassdoor_data(ticker.upper(), use_cache=use_cache)
         
-        # Save to database
+        # Generate signal ID
         signal_id = str(uuid_lib.uuid4())
+        
+        # ================================================================
+        # 1. INSERT INTO culture_signals (Summary Table)
+        # ================================================================
         
         insert_sql = f"""
             INSERT INTO culture_signals (
@@ -368,6 +375,91 @@ async def collect_by_ticker(
         
         db.execute_update(insert_sql)
         
+        # ================================================================
+        # 2. INSERT INTO glassdoor_reviews (Individual Reviews)
+        # ================================================================
+        
+        reviews_inserted = 0
+        if 'reviews' in culture_data and culture_data['reviews']:
+            for review in culture_data['reviews']:
+                review_id = str(uuid_lib.uuid4())
+                
+                # Escape single quotes for SQL
+                pros = (review.get('pros', '') or '').replace("'", "''")
+                cons = (review.get('cons', '') or '').replace("'", "''")
+                advice = (review.get('advice', '') or '').replace("'", "''")
+                title = (review.get('title', '') or '').replace("'", "''")
+                job_title = (review.get('job_title', '') or '').replace("'", "''")
+                
+                review_insert = f"""
+                    INSERT INTO glassdoor_reviews (
+                        id, culture_signal_id, company_id,
+                        review_id, rating, title, pros, cons,
+                        advice_to_management, is_current_employee, job_title,
+                        review_date, created_at
+                    ) VALUES (
+                        '{review_id}',
+                        '{signal_id}',
+                        '{company_id}',
+                        '{review.get('review_id', review_id)}',
+                        {float(review.get('rating', 3.0))},
+                        '{title}',
+                        '{pros}',
+                        '{cons}',
+                        '{advice}',
+                        {str(review.get('is_current_employee', False)).upper()},
+                        '{job_title}',
+                        {f"'{review.get('date')}'" if review.get('date') else 'NULL'},
+                        CURRENT_TIMESTAMP()
+                    )
+                """
+                
+                try:
+                    db.execute_update(review_insert)
+                    reviews_inserted += 1
+                except Exception as e:
+                    # Log but continue
+                    print(f"Failed to insert review: {e}")
+        
+        # ================================================================
+        # 3. SAVE TO JSON FILE in results/
+        # ================================================================
+        
+        from pathlib import Path
+        
+        results_dir = Path("results")
+        results_dir.mkdir(exist_ok=True)
+        
+        json_data = {
+            "ticker": ticker.upper(),
+            "company_id": company_id,
+            "signal_id": signal_id,
+            "collected_at": datetime.now().isoformat(),
+            "summary": {
+                "culture_score": culture_data['culture_score'],
+                "innovation_score": culture_data.get('innovation_score'),
+                "data_driven_score": culture_data.get('data_driven_score'),
+                "change_readiness_score": culture_data.get('change_readiness_score'),
+                "ai_awareness_score": culture_data.get('ai_awareness_score'),
+                "review_count": culture_data['review_count'],
+                "avg_rating": culture_data['avg_rating'],
+                "confidence": culture_data['confidence'],
+                "current_employee_ratio": culture_data.get('current_employee_ratio'),
+                "rationale": culture_data.get('rationale')
+            },
+            "reviews": culture_data.get('reviews', []),
+            "positive_keywords": culture_data.get('positive_keywords_found', []),
+            "negative_keywords": culture_data.get('negative_keywords_found', [])
+        }
+        
+        json_path = results_dir / f"{ticker.upper()}_glassdoor.json"
+        with open(json_path, 'w') as f:
+            json.dump(json_data, f, indent=2, default=str)
+        
+        # ================================================================
+        # RETURN RESPONSE
+        # ================================================================
+        
         return {
             "message": f"Culture signal collected for {ticker}",
             "ticker": ticker.upper(),
@@ -378,9 +470,11 @@ async def collect_by_ticker(
             "change_readiness_score": culture_data.get('change_readiness_score'),
             "ai_awareness_score": culture_data.get('ai_awareness_score'),
             "review_count": culture_data['review_count'],
+            "reviews_saved_to_db": reviews_inserted,
             "avg_rating": culture_data['avg_rating'],
             "confidence": culture_data['confidence'],
-            "rationale": culture_data.get('rationale')
+            "rationale": culture_data.get('rationale'),
+            "json_file": str(json_path)
         }
         
     except Exception as e:
