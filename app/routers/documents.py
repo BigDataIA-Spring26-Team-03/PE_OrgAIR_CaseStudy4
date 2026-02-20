@@ -1,43 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.services.snowflake import SnowflakeService
-
-# Pipelines (must exist in your repo)
-from app.pipelines.sec_edgar import collect_for_tickers
-from app.pipelines.document_parser_from_s3 import main as parse_main
-from app.pipelines.document_text_cleaner import main as clean_main
-from app.pipelines.document_chunker_s3 import main as chunk_main
 from app.pipelines.sec_pipeline import SECPipeline
 
 router = APIRouter(prefix="/api/v1/documents", tags=["Documents"])
-
-
-# -----------------------------
-# Unified collect by ticker
-# -----------------------------
-@router.post("/collect/{ticker}", status_code=202)
-def collect_by_ticker(ticker: str) -> dict:
-    """
-    Run the unified SEC pipeline for a single ticker.
-    Downloads 10-K x2, 8-K x2, 10-Q x4 → parses with edgartools (Mistral OCR for PDFs)
-    → semantic chunks (500-1000 words, 75-word overlap) → stores in S3 + Snowflake.
-    Deletes existing documents_sec + document_chunks_sec rows for the ticker first.
-    """
-    pipeline = SECPipeline()
-    result = pipeline.run(ticker.upper().strip())
-    return {
-        "status": "completed",
-        "ticker": result["ticker"],
-        "docs_processed": result["docs_processed"],
-        "chunks_created": result["chunks_created"],
-        "errors": result["errors"],
-    }
 
 
 # -----------------------------
@@ -74,37 +45,20 @@ def normalize_doc_row(r: dict[str, Any]) -> dict[str, Any]:
 # -----------------------------
 class CollectDocumentsRequest(BaseModel):
     """
-    Trigger evidence collection for a company.
-
-    Either provide ticker OR company_id.
-    Defaults to running ALL steps: download -> parse -> clean -> chunk
+    Trigger the unified SEC pipeline for a company.
+    Provide either ticker OR company_id.
+    Runs: download → parse (edgartools / Mistral OCR) → chunk → store in S3 + Snowflake.
     """
     ticker: Optional[str] = Field(default=None, description="Company ticker (preferred)")
     company_id: Optional[str] = Field(default=None, description="Company UUID (if ticker not provided)")
 
-    filing_types: list[str] = Field(
-        default_factory=lambda: ["10-K", "10-Q", "8-K", "DEF 14A"],
-        description="Filings to download",
-    )
-    limit_per_type: int = Field(default=1, ge=1, le=5)
-
-    steps: list[Literal["download", "parse", "clean", "chunk"]] = Field(
-        default_factory=lambda: ["download", "parse", "clean", "chunk"],
-        description="Which stages to run",
-    )
-
-    # pipeline batch limits for stages that work on status queues
-    parse_limit: int = Field(default=200, ge=1, le=2000)
-    clean_limit: int = Field(default=200, ge=1, le=2000)
-    chunk_limit: int = Field(default=200, ge=1, le=2000)
-
 
 class CollectDocumentsResponse(BaseModel):
-    ran_steps: list[str]
+    status: str
     ticker: str
-    filing_types: list[str]
-    limit_per_type: int
-    message: str
+    docs_processed: int
+    chunks_created: int
+    errors: list[str]
 
 
 class DocumentListResponse(BaseModel):
@@ -122,63 +76,49 @@ class ChunkListResponse(BaseModel):
 # -----------------------------
 # Endpoints
 # -----------------------------
+
+@router.post("/collect/{ticker}", status_code=202, response_model=CollectDocumentsResponse)
+def collect_by_ticker(ticker: str) -> CollectDocumentsResponse:
+    """
+    Run the unified SEC pipeline for a single ticker (path param).
+    Downloads 10-K x2, 8-K x2, 10-Q x4 → parses → chunks → stores in S3 + Snowflake.
+    """
+    result = SECPipeline().run(ticker.upper().strip())
+    return CollectDocumentsResponse(
+        status="completed",
+        ticker=result["ticker"],
+        docs_processed=result["docs_processed"],
+        chunks_created=result["chunks_created"],
+        errors=result["errors"],
+    )
+
+
 @router.post("/collect", response_model=CollectDocumentsResponse)
 def collect_documents(payload: CollectDocumentsRequest) -> CollectDocumentsResponse:
-    sf = SnowflakeService()
-
+    """
+    Run the unified SEC pipeline for a ticker or company_id (request body).
+    """
     if not payload.ticker and not payload.company_id:
         raise HTTPException(status_code=400, detail="Provide either ticker or company_id")
 
-    # Resolve ticker if only company_id was provided
     ticker = payload.ticker
     if not ticker:
+        sf = SnowflakeService()
         rows = sf.execute_query(
-            """
-            SELECT ticker
-            FROM companies
-            WHERE id = %(id)s
-              AND is_deleted = FALSE
-            LIMIT 1
-            """,
+            "SELECT ticker FROM companies WHERE id = %(id)s AND is_deleted = FALSE LIMIT 1",
             {"id": payload.company_id},
         )
         if not rows:
             raise HTTPException(status_code=404, detail="company_id not found")
         ticker = str(row_get(rows[0], "ticker", "TICKER")).upper()
 
-    ticker = str(ticker).upper().strip()
-    ran: list[str] = []
-
-    # Step: download (SEC -> S3 -> documents)
-    if "download" in payload.steps:
-        collect_for_tickers(
-            tickers=[ticker],
-            filing_types=payload.filing_types,
-            limit_per_type=payload.limit_per_type,
-        )
-        ran.append("download")
-
-    # Step: parse (status='downloaded' -> parsed/..json.gz -> status='parsed')
-    if "parse" in payload.steps:
-        parse_main(limit=payload.parse_limit)
-        ran.append("parse")
-
-    # Step: clean (status='parsed' -> processed/..txt.gz -> status='cleaned')
-    if "clean" in payload.steps:
-        clean_main(limit=payload.clean_limit)
-        ran.append("clean")
-
-    # Step: chunk (status='cleaned' -> document_chunks + status='chunked')
-    if "chunk" in payload.steps:
-        chunk_main(limit=payload.chunk_limit)
-        ran.append("chunk")
-
+    result = SECPipeline().run(ticker.upper().strip())
     return CollectDocumentsResponse(
-        ran_steps=ran,
-        ticker=ticker,
-        filing_types=payload.filing_types,
-        limit_per_type=payload.limit_per_type,
-        message="Collection triggered successfully.",
+        status="completed",
+        ticker=result["ticker"],
+        docs_processed=result["docs_processed"],
+        chunks_created=result["chunks_created"],
+        errors=result["errors"],
     )
 
 
@@ -271,7 +211,6 @@ def get_document_chunks(
         {"doc_id": doc_id, "limit": limit, "offset": offset},
     )
 
-    # Normalize uppercase/lowercase from connector
     def norm_chunk(r: dict[str, Any]) -> dict[str, Any]:
         return {
             "id": row_get(r, "id", "ID"),

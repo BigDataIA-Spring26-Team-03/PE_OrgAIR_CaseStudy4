@@ -378,13 +378,35 @@ class SECPipeline:
                     if len(text_str.split()) >= MIN_BLOCK_WORDS:
                         sections[canonical_name] = text_str
 
+        
         elif filing_type == "8-K":
             filings = company.get_filings(form="8-K")
             if not filings:
                 return {}
             eightk = filings.latest(1).obj()
-            # edgartools EightK exposes items dict
-            items_dict = getattr(eightk, "items", {}) or {}
+            items_raw = getattr(eightk, "items", None) or []
+
+            # edgartools can return items as a list of objects OR a dict — handle both
+            if isinstance(items_raw, dict):
+                items_dict = items_raw
+            elif isinstance(items_raw, list):
+                # Each item in the list is typically an object with .item_number and .text attributes
+                items_dict = {}
+                for item in items_raw:
+                    # Try attribute-style access first (edgartools Item objects)
+                    item_num = getattr(item, "item_number", None) or getattr(item, "number", None)
+                    text = getattr(item, "text", None) or getattr(item, "content", None)
+                    if item_num and text:
+                        items_dict[str(item_num)] = text
+                    elif isinstance(item, str):
+                        # Fallback: plain string — store by index
+                        items_dict[str(len(items_dict))] = item
+            else:
+                logger.warning("Unexpected 8-K items type: %s", type(items_raw))
+                items_dict = {}
+
+            logger.info("8-K items resolved: %s", list(items_dict.keys()))
+
             for item_num, canonical_name in CANONICAL["8-K"].items():
                 text = items_dict.get(item_num)
                 if text:
@@ -392,7 +414,7 @@ class SECPipeline:
                     if len(text_str.split()) >= MIN_BLOCK_WORDS:
                         sections[canonical_name] = text_str
 
-        return sections
+                return sections
 
     def _parse_with_mistral_ocr(
         self, local_path: str, filing_type: str

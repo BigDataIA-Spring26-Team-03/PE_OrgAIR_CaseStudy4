@@ -17,7 +17,8 @@ Pipeline per company:
 
 import sys
 import os
-from datetime import datetime
+from datetime import datetime,timedelta
+
 
 for path in ["/opt/airflow", "/opt/airflow/src", "/opt/airflow/app"]:
     if path not in sys.path:
@@ -49,6 +50,7 @@ API_BASE_URL = os.environ.get("API_BASE_URL", "http://api:8000")
     default_args={
         "owner": "pe-orgair",
         "retries": 1,
+        "execution_timeout": timedelta(minutes=10),
     },
 )
 def org_air_scoring_pipeline():

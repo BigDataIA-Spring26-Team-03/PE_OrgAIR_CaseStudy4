@@ -191,9 +191,9 @@ async def collect_by_ticker(
             merge_extractions,
             quality_check,
         )
-        from scoring.board_analyzer import (
-            BoardCompositionAnalyzer,
-            BoardMember,
+        from src.scoring.board_analyzer import (
+        BoardCompositionAnalyzer,
+        BoardMember,
         )
 
         # 1. Collect raw text from EDGAR
