@@ -17,6 +17,7 @@ COPY pyproject.toml poetry.lock* ./
 RUN poetry install --no-interaction --no-ansi
 
 COPY app ./app
+COPY src ./src
 
 EXPOSE 8000
 

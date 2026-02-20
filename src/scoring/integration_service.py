@@ -120,7 +120,7 @@ class ScoringIntegrationService:
         url = f"{self.api_base}/api/v1/companies"
         logger.info("fetch_company", ticker=ticker, url=url)
 
-        resp = requests.get(url, params={"limit": 100}, timeout=30)
+        resp = requests.get(url, params={"limit": 100}, timeout=120)
         resp.raise_for_status()
         companies = resp.json()
 
@@ -147,7 +147,7 @@ class ScoringIntegrationService:
         logger.info("fetch_cs2_evidence", ticker=ticker, url=url)
 
         try:
-            resp = requests.get(url, timeout=30)
+            resp = requests.get(url, timeout=120)
             resp.raise_for_status()
             data = resp.json()
             logger.info(
@@ -182,36 +182,64 @@ class ScoringIntegrationService:
         except requests.RequestException as e:
             logger.warning("glassdoor_collect_failed", ticker=ticker, error=str(e))
             return {}
-
     def collect_board(self, ticker: str) -> Dict[str, Any]:
         """
-        Collect board composition / governance signals.
-        POST /api/v1/board-governance/collect/{ticker}.
-        Returns governance score dict.
+        First tries to read existing board data from Snowflake via GET.
+        Only triggers full collection pipeline if no data exists.
         """
-        url = f"{self.api_base}/api/v1/board-governance/collect/{ticker}"
-        logger.info("collect_board", ticker=ticker, url=url)
+        logger.info("collect_board", ticker=ticker)
 
+        # Step 1: Try to read existing data from Snowflake first
         try:
-            resp = requests.post(url, params={"use_cache": True}, timeout=120)
+            get_url = f"{self.api_base}/api/v1/board-governance/ticker/{ticker}"
+            resp = requests.get(get_url, timeout=30)
             resp.raise_for_status()
             data = resp.json()
-            logger.info(
-                "board_collected",
-                ticker=ticker,
-                governance_score=data.get("governance_score"),
-            )
-            return data
+
+            if data:
+                latest = data[0]
+                logger.info("board_collected_from_cache",
+                            ticker=ticker,
+                            governance_score=latest.get("governance_score"))
+                return {
+                    "governance_score": latest.get("governance_score"),
+                    "confidence": latest.get("confidence", 0.7),
+                    "has_tech_committee": latest.get("has_tech_committee", False),
+                    "has_ai_expertise": latest.get("has_ai_expertise", False),
+                    "has_data_officer": latest.get("has_data_officer", False),
+                    "member_count": 1,
+                }
+        except requests.RequestException as e:
+            logger.warning("board_get_failed", ticker=ticker, error=str(e))
+
+        # Step 2: No existing data — trigger full collection pipeline
+        logger.info("board_no_existing_data_collecting", ticker=ticker)
+        try:
+            post_url = f"{self.api_base}/api/v1/board-governance/collect/{ticker}"
+            resp = requests.post(post_url,
+                                params={"use_cache": True},
+                                timeout=120)
+            resp.raise_for_status()
+            data = resp.json()
+            logger.info("board_collected_fresh",
+                        ticker=ticker,
+                        governance_score=data.get("governance_score"))
+            return {
+                "governance_score": data.get("governance_score"),
+                "confidence": data.get("confidence", 0.7),
+                "has_tech_committee": False,
+                "has_ai_expertise": False,
+                "has_data_officer": False,
+                "member_count": data.get("member_count", 0),
+            }
         except requests.RequestException as e:
             logger.warning("board_collect_failed", ticker=ticker, error=str(e))
             return {}
-
+    
     def fetch_sec_evidence(self, ticker: str) -> Dict[str, Any]:
         """
         Fetch SEC document chunks from CS2 API.
-        GET /api/v1/documents?ticker={ticker} → get doc IDs,
-        then GET /api/v1/documents/{doc_id}/chunks → get section text.
-
+        Only fetches documents with status=chunked to avoid empty chunk lookups.
         Returns dict keyed by section name with list of chunk texts.
         E.g.: {"Item 1 (Business)": ["chunk1...", "chunk2..."], ...}
         """
@@ -220,40 +248,75 @@ class ScoringIntegrationService:
         sec_sections: Dict[str, List[str]] = {}
 
         try:
-            # Step 1: List documents for this ticker
+            # Step 1: List ONLY chunked documents for this ticker
             url = f"{self.api_base}/api/v1/documents"
             resp = requests.get(
-                url, params={"ticker": ticker, "limit": 20}, timeout=30
+                url,
+                params={"ticker": ticker, "status": "chunked", "limit": 20},
+                timeout=120,
             )
             resp.raise_for_status()
             doc_data = resp.json()
-            documents = doc_data.get("items", doc_data) if isinstance(doc_data, dict) else doc_data
+            documents = (
+                doc_data.get("items", doc_data)
+                if isinstance(doc_data, dict)
+                else doc_data
+            )
 
             if not documents:
-                logger.warning("no_sec_documents", ticker=ticker)
+                logger.warning("no_chunked_sec_documents", ticker=ticker)
                 return sec_sections
 
-            # Step 2: For each document, fetch chunks grouped by section
+            logger.info(
+                "sec_documents_found",
+                ticker=ticker,
+                count=len(documents),
+                filing_types=[d.get("filing_type") for d in documents],
+            )
+
+            # Step 2: For each chunked document, fetch all chunks grouped by section
             for doc in documents:
                 doc_id = doc.get("id")
+                filing_type = doc.get("filing_type", "unknown")
                 if not doc_id:
                     continue
 
                 chunks_url = f"{self.api_base}/api/v1/documents/{doc_id}/chunks"
                 try:
                     chunks_resp = requests.get(
-                        chunks_url, params={"limit": 500}, timeout=30
+                        chunks_url, params={"limit": 500}, timeout=120
                     )
                     chunks_resp.raise_for_status()
                     chunks_data = chunks_resp.json()
-                    items = chunks_data.get("items", chunks_data) if isinstance(chunks_data, dict) else chunks_data
+                    items = (
+                        chunks_data.get("items", chunks_data)
+                        if isinstance(chunks_data, dict)
+                        else chunks_data
+                    )
 
+                    doc_sections = set()
                     for chunk in items:
                         section = chunk.get("section", "")
                         content = chunk.get("content", "")
                         if section and content:
                             sec_sections.setdefault(section, []).append(content)
-                except requests.RequestException:
+                            doc_sections.add(section)
+
+                    logger.info(
+                        "doc_chunks_fetched",
+                        doc_id=doc_id,
+                        filing_type=filing_type,
+                        sections=list(doc_sections),
+                        chunk_count=len(items),
+                    )
+
+                except requests.RequestException as e:
+                    logger.warning(
+                        "chunk_fetch_failed",
+                        doc_id=doc_id,
+                        filing_type=filing_type,
+                        error=str(e),
+                    )
                     continue
 
             logger.info(
@@ -262,6 +325,7 @@ class ScoringIntegrationService:
                 sections=list(sec_sections.keys()),
                 total_chunks=sum(len(v) for v in sec_sections.values()),
             )
+
         except requests.RequestException as e:
             logger.warning("sec_evidence_fetch_failed", ticker=ticker, error=str(e))
 

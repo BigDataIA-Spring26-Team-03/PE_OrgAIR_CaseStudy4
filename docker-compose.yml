@@ -9,7 +9,7 @@ services:
       - APP_ENV=development
       - DEBUG=true
       - REDIS_URL=redis://redis:6379/0
-
+      - PYTHONPATH=/app
       # Snowflake passed from your local environment/.env (NOT committed)
       - SNOWFLAKE_ACCOUNT=${SNOWFLAKE_ACCOUNT}
       - SNOWFLAKE_USER=${SNOWFLAKE_USER}
@@ -87,6 +87,7 @@ services:
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "pe-orgair-secret-key-2026"
       # Install extra packages at container startup (Airflow built-in feature)
       _PIP_ADDITIONAL_REQUIREMENTS: "requests structlog snowflake-connector-python yfinance"
       API_BASE_URL: http://api:8000
@@ -118,6 +119,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: ""
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "pe-orgair-secret-key-2026"
       _PIP_ADDITIONAL_REQUIREMENTS: "requests structlog snowflake-connector-python yfinance"
       API_BASE_URL: http://api:8000
 
