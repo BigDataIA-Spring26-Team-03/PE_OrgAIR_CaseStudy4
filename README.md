@@ -1,431 +1,417 @@
-# Case Study 3: AI Scoring Engine
-
-**"From Evidence to Calibrated AI Readiness Scores"**
+# PE Org-AI-R Platform  
+## Case Study 3 — AI Scoring Engine  
+### From Evidence to Calibrated AI Readiness Scores  
 
 **Course:** Big Data and Intelligent Analytics  
 **Instructor:** Professor Sri Krishnamurthy  
-**Term:** Spring 2026
+**Term:** Spring 2026  
 
-**Team 3:**
-- Ishaan Samel
-- Ayush Fulsundar
-- Vaishnavi Srinivas
+## Team 3
 
----
-
-## 🧠 Project Overview
-
-Case Study 3 implements the **Organizational AI-Readiness (Org-AI-R) Scoring Engine** for the PE-OrgAIR platform.
-
-**Building on:**
-- **Case Study 1** → Platform foundation
-- **Case Study 2** → Evidence ingestion layer
-
-This case study transforms structured evidence into a **risk-adjusted, sector-calibrated, confidence-bounded AI readiness score**.
-
-### Key Focus Areas
-
-Unlike CS2, which focuses on collecting evidence, **CS3 focuses on:**
-
-- Dimension-level scoring
-- Risk adjustments
-- Position normalization
-- Synergy modeling
-- Confidence interval estimation
-
-The final output is a **statistically defensible Org-AI-R score** suitable for private equity benchmarking.
+- Ishaan Samel  
+- Ayush Fulsundar  
+- Vaishnavi Srinivas  
 
 ---
 
-## 📊 Scoring Framework Overview
+## 🚀 Live Application
 
-As defined in the Scoring Engine specification (Sections 1–4), the Org-AI-R framework consists of:
-
-1. **Dimension Scoring**
-2. **Vᴿ** (Idiosyncratic AI Readiness)
-3. **Position Factor (Pᶠ)**
-4. **Hᴿ** (Relative AI Strength)
-5. **Synergy Adjustment**
-6. **SEM-Based Confidence Interval**
-
-### The Final Formula
-```
-Org-AI-R = (1 − β) × Weighted Components + β × Synergy
-```
-
-**Where:**
-- α = 0.60 (dimension emphasis)
-- β = 0.12 (synergy weight)
-- δ = 0.15 (position amplification factor)
+| Component | Link |
+|------------|------|
+| Demo Video | (Add URL) |
+| Interactive Codelab | https://codelabs-preview.appspot.com/?file_id=1Iza8HTzKo2jdCG3gzKNTNFgZx7HNH_amvO5q0_4Bm_0#10 |
 
 ---
 
-## ⚖️ System Architecture
+## 📌 Executive Summary
 
-### High-Level Flow
-```
-CS1 Platform
-     ↓
-CS2 Evidence Signals
-     ↓
-CS3 Scoring Engine
-     ↓
-Org-AI-R + Confidence Interval
-     ↓
-Persist Back to Platform
-```
+Case Study 3 implements the Organizational AI-Readiness (Org-AI-R) Scoring Engine for the PE Org-AI-R platform.
 
-### Detailed Pipeline
-```
-Evidence Signals (CS2)
-    ↓
-Evidence → Dimension Mapping (7 Dimensions)
-    ↓
-Rubric-Based Dimension Scoring
-    ↓
-Talent Concentration Calculation
-    ↓
-Vᴿ Computation (with CV Penalty)
-    ↓
-Position Factor (Sector Relative)
-    ↓
-Hᴿ Adjustment
-    ↓
-Synergy Calculation
-    ↓
-Org-AI-R Final Score
-    ↓
-SEM Confidence Interval
-```
+Building on:
+
+- Case Study 1 → Platform Foundation (FastAPI, Snowflake, Redis, Docker)  
+- Case Study 2 → Evidence Collection & Signal Extraction  
+- Case Study 3 → Risk-adjusted, sector-calibrated scoring engine  
+
+The Org-AI-R engine transforms structured governance, technology, talent, culture, and external signals into:
+
+- Risk-adjusted AI maturity scores  
+- Sector-relative benchmarking  
+- Interaction-based synergy modeling  
+- SEM-based confidence intervals  
+- Private equity decision-support metrics  
+
+The final output is a statistically defensible AI readiness score suitable for portfolio benchmarking and investment evaluation.
+
+---
+
+## 🏗 System Architecture Overview
+
+The system is composed of five major layers:
+
+- Data Ingestion Layer (CS2)  
+- FastAPI Backend (CS1 Foundation)  
+- Org-AI-R Scoring Engine (CS3)  
+- Persistence Layer (Snowflake + Redis + S3)  
+- Visualization Layer (Streamlit)  
+
+Full architecture diagram provided in `/docs`.
+
+---
+
+## 📊 Org-AI-R Scoring Framework
+
+The scoring engine consists of:
+
+- 7 Dimension Scores  
+- Vᴿ (Idiosyncratic AI Readiness)  
+- Position Factor (Pᶠ)  
+- Hᴿ (Relative AI Strength)  
+- Synergy Interaction  
+- SEM-Based Confidence Interval  
+
+---
+
+## 🔢 Final Formula
+
+Org-AI-R = (1 − β) × Weighted Components + β × Synergy  
+
+Where:
+
+- α = 0.60 (dimension emphasis)  
+- β = 0.12 (synergy weight)  
+- δ = 0.15 (position amplification factor)  
+
+All numerical calculations use `Decimal` for financial-grade precision and reproducibility.
+
+---
+
+## 🧩 Core Scoring Components (CS3)
+
+### 1️⃣ Evidence Mapper
+
+Maps structured CS2 signals into 7 Org-AI-R dimensions:
+
+- Data Infrastructure  
+- AI Governance  
+- Technology Stack  
+- Talent  
+- Leadership  
+- Use Case Portfolio  
+- Culture  
+
+Features:
+
+- Weighted signal-to-dimension mapping matrix  
+- Primary & secondary weights  
+- Reliability adjustment  
+- Default midpoint score (50) if evidence absent  
+- Property-based boundedness validation  
+
+---
+
+### 2️⃣ Rubric Scorer
+
+Implements a 5-level calibrated rubric per dimension.
+
+**Scoring Process:**
+
+- Normalize evidence  
+- Match qualitative keywords  
+- Evaluate quantitative signals  
+- Assign level (1–5)  
+- Interpolate within score band  
+
+Ensures qualitative inputs produce deterministic numerical outputs.
+
+---
+
+### 3️⃣ Talent Concentration Risk
+
+Models key-person dependency:
+
+TC = 0.4L + 0.3T + 0.2S + 0.1M  
+
+Bounded to [0,1]
+
+**Risk Adjustment:**
+
+TalentRiskAdj = 1 − 0.15 × max(0, TC − 0.25)
+
+High concentration reduces effective readiness.
+
+---
+
+### 4️⃣ Vᴿ – Idiosyncratic AI Readiness
+
+- Weighted dimension aggregation  
+- Coefficient of Variation (CV) penalty:
+
+Penalty = 1 − 0.25 × CV  
+
+Encourages balanced capability development.
+
+Includes structured audit logging for traceability.
+
+---
+
+### 5️⃣ Position Factor (Pᶠ)
+
+PF = 0.6 × VR_component + 0.4 × MarketCap_component  
+
+Bounded to [-1,1]
+
+Captures sector-relative AI standing.
+
+---
+
+### 6️⃣ Hᴿ Adjustment
+
+Hᴿ = HR_base × (1 + δ × PF)
+
+δ = 0.15  
+
+Leaders are amplified; laggards are penalized.
+
+---
+
+### 7️⃣ Synergy Component
+
+Synergy = (Vᴿ × Hᴿ / 100) × Alignment × TimingFactor  
+
+Models interaction between readiness and sector position.
+
+---
+
+### 8️⃣ SEM-Based Confidence Interval
+
+Implements:
+
+- Spearman-Brown reliability correction  
+- Standard Error of Measurement (SEM)  
+
+Outputs:
+
+- Lower bound  
+- Upper bound  
+- Confidence score  
+
+Bounds clipped to [0,100].
+
+Ensures statistical defensibility.
+
+---
+
+## 🗄 Infrastructure & Persistence
+
+### Database
+- Snowflake (primary analytics storage)  
+- CS3 schema includes scoring results tables  
+
+### Caching
+- Redis for performance optimization  
+
+### Document Storage
+- AWS S3 for SEC filings & raw documents  
+
+### Orchestration
+- Airflow DAG (`org_air_scoring_dag.py`)  
+- Supports batch scoring automation  
+
+### Containerization
+- Dockerfile  
+- docker-compose.yml  
 
 ---
 
 ## 📂 Project Structure
-```
-PE_OrgAIR_CaseStudy3/
-├── src/
-│   ├── scoring/
-│   │   ├── evidence_mapper.py          # Evidence-to-dimension mapping
-│   │   ├── rubric_scorer.py            # Rubric-based evaluation
-│   │   ├── vr_calculator.py            # Idiosyncratic readiness
-│   │   ├── position_factor.py          # Sector-relative positioning
-│   │   ├── hr_calculator.py            # Relative AI strength
-│   │   ├── synergy_calculator.py       # Interaction effects
-│   │   ├── talent_concentration.py     # Key-person risk
-│   │   ├── confidence.py               # SEM confidence intervals
-│   │   └── orgair_calculator.py        # Final score composition
-│   │
-│   ├── pipelines/
-│   │   ├── glassdoor_collector.py      # Culture data ingestion
-│   │   └── board_analyzer.py           # Governance assessment
-│   │
-│   └── integration_service.py          # Platform integration
+
+```bash
+PE_ORGAIR_CASESTUDY3/
 │
-├── tests/                              # Unit & property-based tests
-├── results/                            # Scoring outputs
-└── README.md                           # Project documentation
+├── app/                        # FastAPI application layer
+│   ├── core/
+│   ├── database/
+│   ├── models/
+│   ├── pipelines/
+│   ├── routers/
+│   ├── services/
+│   └── streamlit_app/
+│
+├── src/
+│   ├── scoring/                # Org-AI-R scoring engine
+│   └── pipelines/
+│
+├── dags/                       # Airflow DAG
+├── scripts/                    # Operational scripts
+├── tests/                      # Unit + property tests
+├── results/                    # Sample scoring outputs
+├── docs/                       # Architecture diagrams
+│
+├── Dockerfile
+├── docker-compose.yml
+├── pyproject.toml
+└── README.md
+```
+
+## ▶️ How to Run
+
+### Install Dependencies
+
+```bash
+poetry install
 ```
 
 ---
 
-## 🔧 Core Components Implemented
+### Run Tests
 
-### 1️⃣ Evidence-to-Dimension Mapping (Task 5.0a)
-
-CS2 produced **4 signal categories**.  
-CS3 requires **7 scoring dimensions**:
-
-1. 🗄️ Data Infrastructure
-2. ⚖️ AI Governance
-3. 💻 Technology Stack
-4. 👥 Talent
-5. 🎯 Leadership
-6. 📋 Use Case Portfolio
-7. 🌟 Culture
-
-#### Implementation Details
-
-- Weighted signal-to-dimension mapping matrix
-- Primary and secondary weight allocation
-- Reliability-adjusted aggregation
-- Confidence propagation
-- Default score of 50 if evidence is missing
-- Property-based tests to ensure boundedness [0,100]
-
-This aligns with the dimension mapping table defined in the framework.
+```bash
+poetry run pytest
+```
 
 ---
 
-### 2️⃣ Rubric-Based Scoring (Task 5.0b)
+### Run the Application
 
-Each dimension is evaluated using **5-level rubric criteria**.
+#### Start FastAPI Backend
 
-**Scoring process:**
+```bash
+poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
 
-1. Normalize evidence text
-2. Evaluate quantitative indicators
-3. Match rubric keywords
-4. Assign level (1–5)
-5. Interpolate within score band
-
-This ensures **qualitative evidence** translates into **calibrated numerical scores**.
+FastAPI will be available at:
+- http://localhost:8000  
+- Swagger Docs: http://localhost:8000/docs  
 
 ---
 
-### 3️⃣ Culture & Governance Enrichment (Tasks 5.0c & 5.0d)
+#### Start Streamlit Dashboard
 
-#### 🌟 Glassdoor Culture Collector
+```bash
+poetry run streamlit run app/streamlit_app/app.py
+```
 
-**Extracts:**
-- Innovation sentiment
-- Data-driven orientation
-- AI awareness
-- Change readiness
-
-**Implements:**
-- Recency weighting
-- Employee status multiplier
-- Confidence scaling
-
-#### ⚖️ Board Composition Analyzer
-
-**Governance scoring based on:**
-- Digital/AI committee presence
-- AI expertise at board level
-- CAIO/CDO/CTO presence
-- Risk oversight mechanisms
-- AI integration in strategy
-
-**Scoring Range:**
-- Base governance score: 20
-- Maximum: 100
+Streamlit will be available at:
+- http://localhost:8501  
 
 ---
 
-### 4️⃣ Talent Concentration (Task 5.0e)
+### Run Airflow (Orchestration Layer)
 
-Models **key-person dependency risk**.
 
-**Formula:**
-```
-TC = 0.4 × leadership_ratio +
-     0.3 × team_size_factor +
-     0.2 × skill_concentration +
-     0.1 × individual_mentions
+```bash
+docker-compose up --build
 ```
 
-**Bounded:** [0,1]
+Airflow will be available at:
+- http://localhost:8081  
 
-**Risk adjustment applied to Vᴿ:**
-```
-TalentRiskAdj = 1 − 0.15 × max(0, TC − 0.25)
-```
+Airflow DAG:
+- `org_air_scoring_dag.py`
 
-Higher concentration reduces effective readiness.
+Airflow enables:
+- Scheduled batch scoring
+- Automated pipeline orchestration
+- Persistent scoring runs across companies
 
 ---
 
-## 📈 Vᴿ – Idiosyncratic AI Readiness
-
-**Vᴿ** combines dimension scores using sector-specific weights.
-
-**Includes:**
-- Coefficient of Variation (CV) penalty
-- Talent concentration penalty
-
-**CV penalty:**
-```
-penalty = 1 − 0.25 × CV
-```
-
-Encourages **balanced AI capability** across dimensions.
-
-All calculations use `Decimal` for **financial-grade precision**.
+This executes the complete Org-AI-R scoring pipeline:
+- Evidence retrieval  
+- Dimension scoring  
+- Vᴿ calculation  
+- Position factor adjustment  
+- Synergy modeling  
+- Final Org-AI-R computation  
+- SEM-based confidence interval estimation  
+- Snowflake persistence  
 
 ---
 
-## 📊 Position Factor (Pᶠ)
+### Service Ports Summary
 
-AI readiness must be evaluated **relative to sector peers**.
+- FastAPI → http://localhost:8000  
+- Swagger Docs → http://localhost:8000/docs  
+- Streamlit → http://localhost:8501  
+- Airflow → http://localhost:8081  
 
-**Formula:**
-```
-PF = 0.6 × VR_component + 0.4 × MarketCap_component
-```
 
-**Bounded:** [-1,1]
+### Score a Company
 
-This measures **relative AI standing** within industry context.
 
----
+poetry run python scripts/run_scoring.py --ticker NVDA
 
-## 📉 Hᴿ Adjustment
-
-Position-adjusted readiness:
-```
-Hᴿ = HR_base × (1 + δ × PF)
-```
-
-**Where:** δ = 0.15
-
-Leaders receive **amplification**; laggards are **penalized**.
 
 ---
 
-## 🔄 Synergy Component
+### Pipeline Execution:
 
-Captures **interaction** between readiness and relative position.
-```
-Synergy = (Vᴿ × Hᴿ / 100) × Alignment × TimingFactor
-```
-
-Weighted into final score using **β = 0.12**.
-
----
-
-## 📐 Final Org-AI-R Score
-```
-Org-AI-R = (1 − β) × weighted_components + β × synergy
-```
-
-**Where:**
-- **α** = 0.60 (dimension emphasis)
-- **β** = 0.12 (synergy weight)
-- **δ** = 0.15 (position amplification)
-
----
-
-## 📏 Confidence Interval (SEM)
-
-Implements **reliability-based uncertainty modeling** using:
-
-- Spearman-Brown correction
-- Standard Error of Measurement (SEM)
-
-**Outputs:**
-- Lower bound
-- Upper bound
-- Confidence score
-
-Ensures **statistical defensibility** of results.
+- Evidence retrieval  
+- Dimension scoring  
+- Vᴿ calculation  
+- Position adjustment  
+- Synergy modeling  
+- Org-AI-R computation  
+- Confidence interval estimation  
+- Snowflake persistence  
 
 ---
 
 ## 🧪 Testing & Validation
 
-Our implementation includes:
+Implemented:
 
-- Property-based testing (Hypothesis)
-- Deterministic scoring
-- Bounds validation (0–100)
-- Portfolio validation across 5 companies
-
----
-
-## 📊 Portfolio Results
-
-Validated against expected ranges:
-
-| Company | Expected Maturity | Score Range |
-|---------|------------------|-------------|
-| **NVIDIA** | High AI maturity | 85-95 |
-| **JPMorgan** | Strong enterprise AI | 75-85 |
-| **Walmart** | Operational AI deployment | 65-75 |
-| **GE** | Industrial AI transformation | 60-70 |
-| **Dollar General** | Limited AI capability | 40-50 |
-
-Results align with benchmark expectations defined in the scoring framework.
-
----
-
-## ▶️ How to Run
-
-### Score a Single Company
-```bash
-poetry run python scripts/run_scoring.py --ticker NVDA
-```
-
-**Pipeline executes:**
-
-1. Dimension mapping
-2. Vᴿ computation
-3. Position factor calculation
-4. Hᴿ adjustment
-5. Synergy modeling
-6. Org-AI-R final score
-7. Confidence interval estimation
-8. Results persistence
-
----
-
-## 🎥 Demo Video
-
-Watch our complete scoring engine demonstration:
-
-[![Demo Video](https://img.shields.io/badge/Watch-Demo%20Video-red?style=for-the-badge&logo=google-drive)](#) <!-- ADD YOUR GOOGLE DRIVE LINK HERE -->
-
-[📹 View Demo Video](#) <!-- ADD YOUR GOOGLE DRIVE LINK HERE -->
-
----
-
-## 📚 Interactive Codelab
-
-Follow our step-by-step interactive tutorial:
-
-[📖 **Open Codelab: AI Scoring Engine - From Evidence to Calibrated Scores**](<https://codelabs-preview.appspot.com/?file_id=1Iza8HTzKo2jdCG3gzKNTNFgZx7HNH_amvO5q0_4Bm_0#10>) 
-
----
-
-## 🎯 What This Enables
-
-Case Study 3 provides:
-
-- **Risk-adjusted AI maturity scoring**
-- **Sector-relative benchmarking**
-- **Confidence-bounded analytics**
-- **Structured AI-readiness modeling**
-- **Private equity decision support**
-
-This scoring engine enables portfolio managers to make **data-driven investment decisions** based on quantified AI readiness metrics.
-
----
-
-## 🔗 Related Case Studies
-
-- [**Case Study 1**: Platform Foundation](<https://github.com/BigDataIA-Spring26-Team-03/PE_OrgAIR_CaseStudy1>) 
-- [**Case Study 2**: Evidence Collection](<https://github.com/BigDataIA-Spring26-Team-03/PE_OrgAIR_CaseStudy2>) 
-
----
-
-## 📦 Requirements
-
-See `requirements.txt` for full dependencies. Key packages:
-
-- `snowflake-connector-python`
-- `pandas`
-- `numpy`
-- `scipy`
-- `hypothesis` (for property-based testing)
-- `pydantic` (for data validation)
-- `python-decimal` (for financial precision)
+- Unit tests  
+- Property-based testing (Hypothesis)  
+- Bounds validation (0–100)  
+- Deterministic scoring checks  
+- Portfolio validation across 5 companies  
 
 ---
 
 ## 👥 Team Contributions
 
+### Ayush Fulsundar
 
-- **Ishaan Samel** – 
-- **Ayush Fulsundar** – 
-- **Vaishnavi Srinivas** – 
+- Evidence Mapper  
+- Rubric Scorer (7 dimensions)  
+- Board Composition Analyzer  
+- Talent Concentration Calculator  
+- Decimal utilities  
+- VRCalculator with audit logging  
+- Property-based tests  
+- Integration Service (pipeline orchestration)  
+
+### Ishaan Samel
+
+- Glassdoor Culture Collector  
+- Position Factor Calculator  
+- HRCalculator (δ = 0.15)  
+- SynergyCalculator  
+- SEM-based Confidence Calculator  
+- OrgAIRCalculator  
+- Integration Service (pipeline orchestration)  
+
+### Vaishnavi Srinivas
+
+- External signals data collection  
 
 ---
 
-## 📝 License
+## 🤖 AI Usage Disclosure
+
+AI tools used during development:
+
+- ChatGPT — debugging, architectural refinement, documentation structuring, test case validation  
+- Claude — debugging support and structured test refinement  
+
+All scoring formulas, logic, and implementations were manually validated and reviewed by the team.
+
+No scoring outputs were auto-generated without verification.
+
+---
+
+## 📜 License
 
 Academic project for QuantUniversity — Spring 2026
-
-- **Team Members** for collaborative development and validation
-
----
-
-**Built with ❤️ by Team 3 | Spring 2026**
