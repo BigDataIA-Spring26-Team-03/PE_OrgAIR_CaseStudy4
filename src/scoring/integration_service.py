@@ -161,27 +161,78 @@ class ScoringIntegrationService:
             return {"ticker": ticker, "signals": [], "signal_count": 0}
 
     def collect_glassdoor(self, ticker: str) -> Dict[str, Any]:
-        """
-        Collect Glassdoor culture signals.
-        POST /api/v1/culture-signals/collect/{ticker}.
-        Returns culture scores dict.
-        """
-        url = f"{self.api_base}/api/v1/culture-signals/collect/{ticker}"
-        logger.info("collect_glassdoor", ticker=ticker, url=url)
+        logger.info("collect_glassdoor", ticker=ticker)
 
+        # Step 1: Try existing data from Snowflake first
         try:
-            resp = requests.post(url, params={"use_cache": True}, timeout=120)
+            get_url = f"{self.api_base}/api/v1/culture-signals/ticker/{ticker}"
+            resp = requests.get(get_url, timeout=30)
             resp.raise_for_status()
             data = resp.json()
-            logger.info(
-                "glassdoor_collected",
-                ticker=ticker,
-                overall_score=data.get("culture_score") or data.get("overall_score"),
-            )
+
+            if data:
+                records = data if isinstance(data, list) else [data]
+
+                # Filter out fake/empty rows (confidence < 0.3 or review_count == 0)
+                real_records = [
+                    r for r in records
+                    if float(r.get("confidence") or 0) >= 0.3
+                    and int(r.get("review_count") or 0) > 0
+                ]
+
+                # Use best record (highest confidence among real ones)
+                record = max(real_records, key=lambda r: float(r.get("confidence") or 0)) \
+                        if real_records else None
+
+                if record:
+                    score = float(record.get("overall_score") or 50)
+                    avg_rating = float(record.get("avg_rating") or 3.0)
+                    rating_score  = (avg_rating / 5.0) * 100
+                    blended_score = round((score * 0.5) + (rating_score * 0.5), 2)
+                    logger.info("glassdoor_from_cache",
+                                ticker=ticker,
+                                raw_score=score,
+                                avg_rating=avg_rating,
+                                blended_score=blended_score)
+                    return {
+                        "culture_score":          blended_score,
+                        "overall_score":          blended_score,
+                        "innovation_score":       float(record.get("innovation_score") or 50),
+                        "data_driven_score":      float(record.get("data_driven_score") or 50),
+                        "change_readiness_score": float(record.get("change_readiness_score") or 50),
+                        "ai_awareness_score":     float(record.get("ai_awareness_score") or 50),
+                        "review_count":           int(record.get("review_count") or 1),
+                        "avg_rating":             float(record.get("avg_rating") or 3.0),
+                        "confidence":             float(record.get("confidence") or 0.7),
+                        "current_employee_ratio": float(record.get("current_employee_ratio") or 0.5),
+                    }
+                else:
+                    logger.warning("glassdoor_no_real_records", ticker=ticker,
+                                total_records=len(records))
+
+        except requests.RequestException as e:
+            logger.warning("glassdoor_get_failed", ticker=ticker, error=str(e))
+
+        # Step 2: No real existing data — try live collection
+        logger.info("glassdoor_no_cache_collecting", ticker=ticker)
+        try:
+            post_url = f"{self.api_base}/api/v1/culture-signals/collect/{ticker}"
+            resp = requests.post(post_url, params={"use_cache": True}, timeout=30)
+
+            if resp.status_code == 429:
+                logger.warning("glassdoor_quota_exhausted", ticker=ticker)
+                return {}
+
+            resp.raise_for_status()
+            data = resp.json()
+            logger.info("glassdoor_collected_fresh", ticker=ticker,
+                        culture_score=data.get("culture_score"))
             return data
         except requests.RequestException as e:
             logger.warning("glassdoor_collect_failed", ticker=ticker, error=str(e))
             return {}
+
+
     def collect_board(self, ticker: str) -> Dict[str, Any]:
         """
         First tries to read existing board data from Snowflake via GET.
@@ -189,7 +240,7 @@ class ScoringIntegrationService:
         """
         logger.info("collect_board", ticker=ticker)
 
-        # Step 1: Try to read existing data from Snowflake first
+        # Step 1: Try existing data from Snowflake first
         try:
             get_url = f"{self.api_base}/api/v1/board-governance/ticker/{ticker}"
             resp = requests.get(get_url, timeout=30)
@@ -197,18 +248,22 @@ class ScoringIntegrationService:
             data = resp.json()
 
             if data:
-                latest = data[0]
-                logger.info("board_collected_from_cache",
-                            ticker=ticker,
-                            governance_score=latest.get("governance_score"))
-                return {
-                    "governance_score": latest.get("governance_score"),
-                    "confidence": latest.get("confidence", 0.7),
-                    "has_tech_committee": latest.get("has_tech_committee", False),
-                    "has_ai_expertise": latest.get("has_ai_expertise", False),
-                    "has_data_officer": latest.get("has_data_officer", False),
-                    "member_count": 1,
-                }
+                record = data[0] if isinstance(data, list) else data
+                gov_score = record.get("governance_score")
+                if gov_score is not None:
+                    logger.info("board_from_cache",
+                                ticker=ticker, governance_score=gov_score)
+                    return {
+                        "governance_score":         float(gov_score),
+                        "confidence":               float(record.get("confidence") or 0.7),
+                        "has_tech_committee":       bool(record.get("has_tech_committee") or False),
+                        "has_ai_expertise":         bool(record.get("has_ai_expertise") or False),
+                        "has_data_officer":         bool(record.get("has_data_officer") or False),
+                        "has_independent_majority": bool(record.get("has_independent_majority") or False),
+                        "has_risk_tech_oversight":  bool(record.get("has_risk_tech_oversight") or False),
+                        "has_ai_strategy":          bool(record.get("has_ai_strategy") or False),
+                        "member_count":             1,
+                    }
         except requests.RequestException as e:
             logger.warning("board_get_failed", ticker=ticker, error=str(e))
 
@@ -216,21 +271,21 @@ class ScoringIntegrationService:
         logger.info("board_no_existing_data_collecting", ticker=ticker)
         try:
             post_url = f"{self.api_base}/api/v1/board-governance/collect/{ticker}"
-            resp = requests.post(post_url,
-                                params={"use_cache": True},
-                                timeout=120)
+            resp = requests.post(post_url, params={"use_cache": True}, timeout=300)
             resp.raise_for_status()
             data = resp.json()
-            logger.info("board_collected_fresh",
-                        ticker=ticker,
+            logger.info("board_collected_fresh", ticker=ticker,
                         governance_score=data.get("governance_score"))
             return {
-                "governance_score": data.get("governance_score"),
-                "confidence": data.get("confidence", 0.7),
-                "has_tech_committee": False,
-                "has_ai_expertise": False,
-                "has_data_officer": False,
-                "member_count": data.get("member_count", 0),
+                "governance_score":         float(data.get("governance_score") or 0),
+                "confidence":               float(data.get("confidence") or 0.7),
+                "has_tech_committee":       bool(data.get("has_tech_committee") or False),
+                "has_ai_expertise":         bool(data.get("has_ai_expertise") or False),
+                "has_data_officer":         bool(data.get("has_data_officer") or False),
+                "has_independent_majority": bool(data.get("has_independent_majority") or False),
+                "has_risk_tech_oversight":  bool(data.get("has_risk_tech_oversight") or False),
+                "has_ai_strategy":          bool(data.get("has_ai_strategy") or False),
+                "member_count":             int(data.get("member_count") or 0),
             }
         except requests.RequestException as e:
             logger.warning("board_collect_failed", ticker=ticker, error=str(e))
@@ -693,74 +748,105 @@ class ScoringIntegrationService:
         company_id: Optional[str],
         results: Dict[str, Any],
     ) -> Optional[str]:
-        """
-        Persist scoring results to Snowflake via SnowflakeService.
-        Creates assessment record + 7 dimension scores.
-        Returns assessment_id.
-        """
         if not company_id:
             logger.warning("skip_persist_no_company_id", ticker=ticker)
             return None
 
         try:
-            from app.services.snowflake import db
+            import os
+            import snowflake.connector
+            from uuid import uuid4
 
-            # Create assessment
-            assessment_id = db.create_assessment({
-                "company_id": company_id,
-                "assessment_type": "SCREENING",
-                "assessment_date": datetime.now(timezone.utc),
-                "primary_assessor": "OrgAIR_Pipeline_v1",
-            })
+            # Connect directly — no app.config dependency
+            conn = snowflake.connector.connect(
+                account=os.environ["SNOWFLAKE_ACCOUNT"],
+                user=os.environ["SNOWFLAKE_USER"],
+                password=os.environ["SNOWFLAKE_PASSWORD"],
+                database=os.environ["SNOWFLAKE_DATABASE"],
+                schema=os.environ["SNOWFLAKE_SCHEMA"],
+                warehouse=os.environ["SNOWFLAKE_WAREHOUSE"],
+                role="ACCOUNTADMIN",
+            )
 
-            # Insert 7 dimension scores
-            dim_enum_map = {
-                "data_infrastructure": "DATA_INFRASTRUCTURE",
-                "ai_governance": "AI_GOVERNANCE",
-                "technology_stack": "TECHNOLOGY_STACK",
-                "talent": "TALENT_SKILLS",
-                "leadership": "LEADERSHIP_VISION",
-                "use_case_portfolio": "USE_CASE_PORTFOLIO",
-                "culture": "CULTURE_CHANGE",
-            }
+            assessment_id = str(uuid4())
+            now = datetime.now(timezone.utc)
+            cursor = conn.cursor()
 
-            for dim_name, dim_data in results.get("dimension_scores", {}).items():
-                db.create_dimension_score({
-                    "assessment_id": assessment_id,
-                    "dimension": dim_enum_map.get(dim_name, dim_name.upper()),
-                    "score": dim_data.get("score", 50.0),
-                    "confidence": dim_data.get("confidence", 0.5),
-                    "evidence_count": len(dim_data.get("contributing_sources", [])),
+            try:
+                # Single INSERT with all 11 columns
+                cursor.execute("""
+                    INSERT INTO assessments (
+                        id, company_id, assessment_type, assessment_date,
+                        status, primary_assessor, secondary_assessor,
+                        v_r_score, confidence_lower, confidence_upper,
+                        created_at
+                    ) VALUES (
+                        %(id)s, %(company_id)s, %(assessment_type)s, %(assessment_date)s,
+                        %(status)s, %(primary_assessor)s, %(secondary_assessor)s,
+                        %(v_r_score)s, %(confidence_lower)s, %(confidence_upper)s,
+                        %(created_at)s
+                    )
+                """, {
+                    "id": assessment_id,
+                    "company_id": company_id,
+                    "assessment_type": "SCREENING",
+                    "assessment_date": now.date(),
+                    "status": "complete",
+                    "primary_assessor": "OrgAIR_Pipeline_v1",
+                    "secondary_assessor": None,
+                    "v_r_score": results["final_score"],
+                    "confidence_lower": results["confidence"]["ci_lower"],
+                    "confidence_upper": results["confidence"]["ci_upper"],
+                    "created_at": now,
                 })
 
-            # Update assessment with final scores
-            db.execute_update(
-                """
-                UPDATE assessments
-                SET status = 'SUBMITTED',
-                    vr_score = %(vr)s,
-                    confidence_lower = %(ci_lower)s,
-                    confidence_upper = %(ci_upper)s
-                WHERE id = %(id)s
-                """,
-                {
-                    "id": assessment_id,
-                    "vr": results["final_score"],
-                    "ci_lower": results["confidence"]["ci_lower"],
-                    "ci_upper": results["confidence"]["ci_upper"],
-                },
-            )
+                # Insert 7 dimension scores
+                dim_enum_map = {
+                    "data_infrastructure": "DATA_INFRASTRUCTURE",
+                    "ai_governance": "AI_GOVERNANCE",
+                    "technology_stack": "TECHNOLOGY_STACK",
+                    "talent": "TALENT_SKILLS",
+                    "leadership": "LEADERSHIP_VISION",
+                    "use_case_portfolio": "USE_CASE_PORTFOLIO",
+                    "culture": "CULTURE_CHANGE",
+                }
 
-            logger.info(
-                "assessment_persisted",
-                ticker=ticker,
-                assessment_id=assessment_id,
-                final_score=results["final_score"],
-            )
-            return assessment_id
+                for dim_name, dim_data in results.get("dimension_scores", {}).items():
+                    if not isinstance(dim_data, dict):
+                        continue
+                    cursor.execute("""
+                        INSERT INTO dimension_scores (
+                            id, assessment_id, dimension, score,
+                            confidence, evidence_count, created_at
+                        ) VALUES (
+                            %(id)s, %(assessment_id)s, %(dimension)s, %(score)s,
+                            %(confidence)s, %(evidence_count)s, %(created_at)s
+                        )
+                    """, {
+                        "id": str(uuid4()),
+                        "assessment_id": assessment_id,
+                        "dimension": dim_enum_map.get(dim_name, dim_name.upper()),
+                        "score": dim_data.get("score", 50.0),
+                        "confidence": dim_data.get("confidence", 0.5),
+                        "evidence_count": len(dim_data.get("contributing_sources", [])),
+                        "created_at": now,
+                    })
+
+                conn.commit()
+                logger.info("assessment_persisted", ticker=ticker,
+                        assessment_id=assessment_id,
+                        final_score=results["final_score"])
+                return assessment_id
+
+            except Exception as e:
+                conn.rollback()
+                raise
+            finally:
+                cursor.close()
+                conn.close()
 
         except Exception as e:
-            logger.error("persist_failed", ticker=ticker, error=str(e))
+            logger.error("persist_failed", ticker=ticker, error=str(e), exc_info=True)
             return None
 
     def generate_result_json(
