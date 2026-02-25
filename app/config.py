@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     SEC_EDGAR_USER_AGENT_EMAIL: str
     SEC_SLEEP_SECONDS: float = 0.75
     RAPIDAPI_KEY: str = Field(default="")
+    OPENAI_API_KEY: str = Field(default="")
+
+    # CS4: LiteLLM multi-provider routing
+    ANTHROPIC_API_KEY: str = Field(default="")
+    LITELLM_BUDGET_USD_PER_DAY: float = Field(default=50.0)
 
     
     # NEW: USPTO API (for CS2)
