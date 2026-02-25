@@ -165,7 +165,7 @@ class CS3Client:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8002",
+        base_url: str = "http://localhost:8000",
         timeout: float = 30.0,
     ) -> None:
         self._base_url = base_url.rstrip("/")

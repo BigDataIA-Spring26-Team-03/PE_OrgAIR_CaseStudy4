@@ -104,7 +104,7 @@ class CS2Client:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8001",
+        base_url: str = "http://localhost:8000",
         timeout: float = 60.0,          # CS2 payloads can be large
     ) -> None:
         self._base_url = base_url.rstrip("/")
