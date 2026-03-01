@@ -10,6 +10,8 @@ from app.routers.signals import router as signals_router
 from app.routers.culture import router as culture_router  # ← ADD THIS
 from app.routers.board import router as board_router
 from app.routers.scoring import router as scoring_router
+from app.routers.search import router as search_router
+from app.routers.justification import router as justification_router
 
 
 def create_app() -> FastAPI:
@@ -29,6 +31,8 @@ def create_app() -> FastAPI:
     app.include_router(culture_router, prefix="/api/v1")  # ← ADD THIS
     app.include_router(board_router, prefix="/api/v1")
     app.include_router(scoring_router, prefix="/api/v1")
+    app.include_router(search_router, prefix="/api/v1")
+    app.include_router(justification_router, prefix="/api/v1")
 
     return app
 
