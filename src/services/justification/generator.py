@@ -151,13 +151,11 @@ class JustificationGenerator:
 
         # 4. Search for evidence using hybrid retrieval
         # Uses retrieve() which is the async method on HybridRetriever
-        results = await self.retriever.retrieve(
-            query=query,
-            k=15,
-            filter_metadata={
-                "company_id": company_id,
-                "dimension": dimension.value,
-            },
+        results = self.retriever.search(
+        query=query,
+        top_k=15,
+        company_id=company_id,
+        dimension=dimension.value,
         )
 
         # 5. Match evidence to rubric keywords → CitedEvidence

@@ -244,3 +244,5 @@ data/
 # Claude Code
 CLAUDE.md
 .claude/    
+
+chroma_data/

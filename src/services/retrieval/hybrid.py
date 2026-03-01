@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -98,8 +99,8 @@ class HybridRetriever:
             for e in evidence_list
         ]
 
-        # Tokenize: lowercase and split on whitespace
-        tokenized = [doc.lower().split() for doc in self._corpus]
+        # Tokenize: lowercase, normalize punctuation, split on whitespace
+        tokenized = [re.sub(r'[^\w\s]', ' ', doc.lower()).split() for doc in self._corpus]
         self._bm25 = BM25Okapi(tokenized)
 
         logger.info(f"hybrid_indexed: {count} documents")
@@ -125,7 +126,7 @@ class HybridRetriever:
 
         # Rebuild BM25 index
         if self._corpus:
-            tokenized = [doc.lower().split() for doc in self._corpus]
+            tokenized = [re.sub(r'[^\w\s]', ' ', doc.lower()).split() for doc in self._corpus]
             self._bm25 = BM25Okapi(tokenized)
 
         return count
@@ -237,7 +238,7 @@ class HybridRetriever:
             return []
 
         # Score all documents
-        tokenized_query = query.lower().split()
+        tokenized_query = re.sub(r'[^\w\s]', ' ', query.lower()).split()
         scores = self._bm25.get_scores(tokenized_query)
 
         # Get top-n indices sorted by score descending

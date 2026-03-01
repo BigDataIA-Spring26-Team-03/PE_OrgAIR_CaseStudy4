@@ -106,7 +106,7 @@ class VectorStore:
         # Encode all contents in one batch (faster than one-by-one)
         embeddings = self.encoder.encode(contents).tolist()
 
-        self.collection.add(
+        self.collection.upsert(
             ids=ids,
             embeddings=embeddings,
             documents=contents,
@@ -139,7 +139,7 @@ class VectorStore:
 
         embeddings = self.encoder.encode(contents).tolist()
 
-        self.collection.add(
+        self.collection.upsert(
             ids=ids,
             embeddings=embeddings,
             documents=contents,

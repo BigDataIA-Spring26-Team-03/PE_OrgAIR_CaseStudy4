@@ -64,11 +64,11 @@ class ModelConfig:
 
 MODEL_ROUTING: Dict[TaskType, ModelConfig] = {
     TaskType.EVIDENCE_EXTRACTION: ModelConfig(
-        primary="gpt-4o-2024-08-06",
-        fallbacks=["claude-sonnet-4-20250514"],
+        primary="gpt-4o-mini",
+        fallbacks=["claude-haiku-4-5-20251001"],
         temperature=0.3,
-        max_tokens=4000,
-        cost_per_1k_tokens=0.015,
+        max_tokens=2000,
+        cost_per_1k_tokens=0.000150,
         system_prompt=(
             "You are a private equity research analyst specializing in AI/technology "
             "due diligence. Extract structured evidence from documents with precision. "
@@ -76,11 +76,11 @@ MODEL_ROUTING: Dict[TaskType, ModelConfig] = {
         ),
     ),
     TaskType.DIMENSION_SCORING: ModelConfig(
-        primary="gpt-4o-2024-08-06",
-        fallbacks=["claude-sonnet-4-20250514"],
+        primary="gpt-4o-mini",
+        fallbacks=["claude-haiku-4-5-20251001"],
         temperature=0.2,
-        max_tokens=2000,
-        cost_per_1k_tokens=0.015,
+        max_tokens=1000,
+        cost_per_1k_tokens=0.000150,
         system_prompt=(
             "You are a rigorous PE scoring analyst. Evaluate evidence against rubric "
             "criteria and assign scores with clear justification. Be objective and "
@@ -88,11 +88,11 @@ MODEL_ROUTING: Dict[TaskType, ModelConfig] = {
         ),
     ),
     TaskType.JUSTIFICATION_GENERATION: ModelConfig(
-        primary="claude-sonnet-4-20250514",
-        fallbacks=["gpt-4o-2024-08-06"],
+        primary="claude-haiku-4-5-20251001",
+        fallbacks=["gpt-4o-mini"],
         temperature=0.2,
-        max_tokens=2000,
-        cost_per_1k_tokens=0.012,
+        max_tokens=1000,
+        cost_per_1k_tokens=0.000250,
         system_prompt=(
             "You are a senior PE investment analyst preparing materials for an "
             "Investment Committee. Write concise, evidence-backed score justifications "
@@ -102,10 +102,10 @@ MODEL_ROUTING: Dict[TaskType, ModelConfig] = {
     ),
     TaskType.CHAT_RESPONSE: ModelConfig(
         primary="claude-haiku-4-5-20251001",
-        fallbacks=["gpt-3.5-turbo"],
+        fallbacks=["gpt-4o-mini"],
         temperature=0.7,
-        max_tokens=1000,
-        cost_per_1k_tokens=0.002,
+        max_tokens=500,
+        cost_per_1k_tokens=0.000250,
         system_prompt=(
             "You are a helpful assistant for the PE OrgAIR platform. Answer questions "
             "about company assessments, scores, and evidence clearly and concisely."
@@ -122,7 +122,7 @@ MODEL_ROUTING: Dict[TaskType, ModelConfig] = {
 class DailyBudget:
     date: date = field(default_factory=date.today)
     spent_usd: Decimal = Decimal("0")
-    limit_usd: Decimal = Decimal("50.00")
+    limit_usd: Decimal = Decimal("2.00")
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
 
     def _reset_if_new_day(self) -> None:
@@ -165,7 +165,7 @@ class ModelRouter:
                 from app.config import settings
                 daily_limit_usd = settings.LITELLM_BUDGET_USD_PER_DAY
             except Exception:
-                daily_limit_usd = 50.0
+                daily_limit_usd = 2.0
         self.daily_budget = DailyBudget(limit_usd=Decimal(str(daily_limit_usd)))
 
     # ------------------------------------------------------------------
