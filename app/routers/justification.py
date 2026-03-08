@@ -24,13 +24,11 @@ router = APIRouter(prefix="/justification", tags=["Justification"])
 
 @lru_cache
 def get_generator() -> JustificationGenerator:
-    """Singleton JustificationGenerator — initialises CS3 client + HybridRetriever once."""
     return JustificationGenerator()
 
 
 @lru_cache
 def get_ic_workflow() -> ICPrepWorkflow:
-    """Singleton ICPrepWorkflow — initialises CS1, CS3 clients + JustificationGenerator once."""
     return ICPrepWorkflow()
 
 
@@ -39,7 +37,6 @@ def get_ic_workflow() -> ICPrepWorkflow:
 # ---------------------------------------------------------------------------
 
 def _parse_dimension(dimension: str) -> Dimension:
-    """Validate a dimension string and return the Dimension enum. Raises 400 if invalid."""
     try:
         return Dimension(dimension)
     except ValueError:
@@ -51,7 +48,6 @@ def _parse_dimension(dimension: str) -> Dimension:
 
 
 def _justification_to_response(j: ScoreJustification) -> ScoreJustificationResponse:
-    """Convert a ScoreJustification dataclass to its Pydantic response model."""
     return ScoreJustificationResponse(
         company_id=j.company_id,
         dimension=j.dimension.value if isinstance(j.dimension, Dimension) else str(j.dimension),
@@ -80,7 +76,6 @@ def _justification_to_response(j: ScoreJustification) -> ScoreJustificationRespo
 
 
 def _ic_package_to_response(pkg: ICMeetingPackage) -> ICMeetingPackageResponse:
-    """Flatten ICMeetingPackage dataclass to its Pydantic response model."""
     dim_justifications: Dict[str, ScoreJustificationResponse] = {
         dim.value: _justification_to_response(j)
         for dim, j in pkg.dimension_justifications.items()
@@ -97,7 +92,7 @@ def _ic_package_to_response(pkg: ICMeetingPackage) -> ICMeetingPackageResponse:
         key_gaps=pkg.key_gaps,
         risk_factors=pkg.risk_factors,
         recommendation=pkg.recommendation,
-        generated_at=pkg.generated_at.isoformat(),
+        generated_at=pkg.generated_at,
         total_evidence_count=pkg.total_evidence_count,
         avg_evidence_strength=pkg.avg_evidence_strength,
         dimension_justifications=dim_justifications,
@@ -108,16 +103,16 @@ def _ic_package_to_response(pkg: ICMeetingPackage) -> ICMeetingPackageResponse:
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("/{company_id}/{dimension}", response_model=ScoreJustificationResponse)
-async def get_justification(company_id: str, dimension: str) -> ScoreJustificationResponse:
+@router.get("/{ticker}/{dimension}", response_model=ScoreJustificationResponse)
+async def get_justification(ticker: str, dimension: str) -> ScoreJustificationResponse:
     """
     Generate a score justification for a single CS3 dimension.
-
+    Use ticker e.g. NVDA, JPM, WMT, GE, DG
     """
     dim = _parse_dimension(dimension)
     try:
         justification = await get_generator().generate_justification(
-            company_id=company_id,
+            company_id=ticker,
             dimension=dim,
         )
         return _justification_to_response(justification)
@@ -127,14 +122,14 @@ async def get_justification(company_id: str, dimension: str) -> ScoreJustificati
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/{company_id}/ic-prep", response_model=ICMeetingPackageResponse)
+@router.post("/{ticker}/ic-prep", response_model=ICMeetingPackageResponse)
 async def prepare_ic_meeting(
-    company_id: str,
+    ticker: str,
     payload: ICPrepRequest = Body(default=ICPrepRequest()),
 ) -> ICMeetingPackageResponse:
     """
-    Generate a complete IC meeting evidence package.
-
+    Generate a complete IC meeting evidence package for all 7 dimensions.
+    Use ticker e.g. NVDA, JPM, WMT, GE, DG
     """
     focus_dimensions: Optional[List[Dimension]] = None
     if payload.focus_dimensions:
@@ -142,7 +137,7 @@ async def prepare_ic_meeting(
 
     try:
         pkg = await get_ic_workflow().prepare_meeting(
-            company_id=company_id,
+            company_id=ticker,
             focus_dimensions=focus_dimensions,
         )
         return _ic_package_to_response(pkg)
