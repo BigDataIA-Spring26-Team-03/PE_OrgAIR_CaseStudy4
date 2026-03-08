@@ -17,6 +17,14 @@ services:
       - SNOWFLAKE_DATABASE=${SNOWFLAKE_DATABASE}
       - SNOWFLAKE_SCHEMA=${SNOWFLAKE_SCHEMA}
       - SNOWFLAKE_WAREHOUSE=${SNOWFLAKE_WAREHOUSE}
+      # CS4: LLM API keys (passed from .env)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # CS4: ChromaDB persistence directory inside the container
+      - CHROMA_PERSIST_DIR=/data/chroma
+
+    volumes:
+      - chroma_data:/data/chroma
 
     depends_on:
       - redis
@@ -89,8 +97,12 @@ services:
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
       AIRFLOW__WEBSERVER__SECRET_KEY: "pe-orgair-secret-key-2026"
       # Install extra packages at container startup (Airflow built-in feature)
-      _PIP_ADDITIONAL_REQUIREMENTS: "requests structlog snowflake-connector-python yfinance"
-      API_BASE_URL: http://api:8000
+      _PIP_ADDITIONAL_REQUIREMENTS: "requests structlog snowflake-connector-python yfinance chromadb sentence-transformers rank-bm25 httpx litellm"
+      API_BASE_URL: http://host.docker.internal:8000
+      CS2_BASE_URL: http://host.docker.internal:8000
+      CHROMA_PERSIST_DIR: /opt/airflow/chroma_data
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
 
       # Snowflake creds (for persist_assessment tasks)
       SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT}
@@ -104,6 +116,7 @@ services:
       - ./src:/opt/airflow/src
       - ./app:/opt/airflow/app
       - ./results:/opt/airflow/results
+      - chroma_data:/opt/airflow/chroma_data
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -120,8 +133,12 @@ services:
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__WEBSERVER__SECRET_KEY: "pe-orgair-secret-key-2026"
-      _PIP_ADDITIONAL_REQUIREMENTS: "requests structlog snowflake-connector-python yfinance"
-      API_BASE_URL: http://api:8000
+      _PIP_ADDITIONAL_REQUIREMENTS: "requests structlog snowflake-connector-python yfinance chromadb sentence-transformers rank-bm25 httpx litellm"
+      API_BASE_URL: http://host.docker.internal:8000
+      CS2_BASE_URL: http://host.docker.internal:8000
+      CHROMA_PERSIST_DIR: /opt/airflow/chroma_data
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
 
       # Snowflake creds
       SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT}
@@ -135,6 +152,7 @@ services:
       - ./src:/opt/airflow/src
       - ./app:/opt/airflow/app
       - ./results:/opt/airflow/results
+      - chroma_data:/opt/airflow/chroma_data
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -143,3 +161,7 @@ services:
 
 volumes:
   postgres_data:
+  chroma_data:
+    name: pe_rag_chroma
+  redis_data:
+    name: pe_rag_redis

@@ -1,14 +1,5 @@
 # tests/test_cs4_justification_generator.py
-#
-# Tests the JustificationGenerator with:
-#   - Real CS3 via http://localhost:8000  (FastAPI + Snowflake)
-#   - Real LLM via LiteLLM (cheap haiku model)
-#   - Seeded ChromaDB (no CS2 API needed)
-#
-# PREREQUISITES:
-#   1. uvicorn app.main:app --reload --port 8000
-#   2. A company ticker with assessment data in Snowflake (change TICKER below)
-#   3. ANTHROPIC_API_KEY or OPENAI_API_KEY in .env
+
 
 import pytest
 
@@ -22,9 +13,7 @@ from src.services.llm.router import ModelRouter
 from src.services.retrieval.hybrid import HybridRetriever
 from src.services.retrieval.dimension_mapper import DimensionMapper
 
-# ---------------------------------------------------------------------------
-# Change this to a ticker that has data in your Snowflake instance
-# ---------------------------------------------------------------------------
+
 TICKER = "NVDA"
 CS3_BASE_URL = "http://localhost:8000"
 
