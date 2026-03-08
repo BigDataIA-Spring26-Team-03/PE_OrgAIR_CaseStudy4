@@ -12,6 +12,7 @@ from app.routers.board import router as board_router
 from app.routers.scoring import router as scoring_router
 from app.routers.search import router as search_router
 from app.routers.justification import router as justification_router
+from app.routers.evidence import router as evidence_router
 
 
 def create_app() -> FastAPI:
@@ -33,6 +34,7 @@ def create_app() -> FastAPI:
     app.include_router(scoring_router, prefix="/api/v1")
     app.include_router(search_router, prefix="/api/v1")
     app.include_router(justification_router, prefix="/api/v1")
+    app.include_router(evidence_router, prefix="/api/v1")
 
     return app
 

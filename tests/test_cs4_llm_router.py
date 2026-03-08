@@ -1,6 +1,4 @@
 # tests/test_cs4_llm_router.py
-# Tests LLM router budget logic (no API call) + one real completion (~$0.0001).
-# The real call test is marked @pytest.mark.asyncio and requires API keys in .env.
 
 from decimal import Decimal
 
@@ -91,7 +89,7 @@ def test_estimate_cost_empty_message():
 
 
 # ---------------------------------------------------------------------------
-# Real API call — requires OPENAI_API_KEY or ANTHROPIC_API_KEY in .env
+# Real API call 
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio

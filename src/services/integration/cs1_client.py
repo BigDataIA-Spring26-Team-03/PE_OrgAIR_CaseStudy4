@@ -106,7 +106,7 @@ class CS1Client:
         """
         ticker_upper = ticker.upper()
         # Fetch up to 200 companies; in practice portfolios are small.
-        companies = await self._fetch_all_companies(limit=200, offset=0)
+        companies = await self._fetch_all_companies(limit=100, offset=0)
         for company in companies:
             if company.ticker and company.ticker.upper() == ticker_upper:
                 return company
