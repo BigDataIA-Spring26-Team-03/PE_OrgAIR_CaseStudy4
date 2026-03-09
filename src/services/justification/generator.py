@@ -13,6 +13,7 @@ from src.services.integration.cs3_client import (
     ScoreLevel,
 )
 from src.services.retrieval.hybrid import HybridRetriever, RetrievedDocument
+from src.services.retrieval.hyde import HyDEQueryEnhancer
 from src.services.llm.router import ModelRouter, TaskType
 
 logger = logging.getLogger(__name__)
@@ -98,7 +99,7 @@ class JustificationGenerator:
     Flow:
         1. Fetch dimension score from CS3
         2. Fetch rubric criteria for that level
-        3. Build search query from rubric keywords
+        3. Enhance search query using HyDE (Hypothetical Document Embeddings)
         4. Search evidence via HybridRetriever
         5. Match evidence to rubric keywords → CitedEvidence
         6. Identify gaps from next-level rubric
@@ -118,6 +119,7 @@ class JustificationGenerator:
         self.cs3 = cs3_client or CS3Client()
         self.retriever = retriever or HybridRetriever()
         self.router = router or ModelRouter()
+        self.hyde = HyDEQueryEnhancer(router=self.router)
 
     async def generate_justification(
         self,
@@ -143,19 +145,36 @@ class JustificationGenerator:
 
         rubric = rubrics[0] if rubrics else None
 
-        # 3. Build search query from rubric keywords
+        # 3. Build base query from rubric keywords + dimension name
         if rubric and rubric.keywords:
-            query = " ".join(rubric.keywords[:5])
+            base_query = " ".join(rubric.keywords[:5]) + " " + dimension.value.replace("_", " ")
         else:
-            query = dimension.value.replace("_", " ")
+            base_query = dimension.value.replace("_", " ")
+
+        # 3b. Enhance query using HyDE — generates a hypothetical evidence
+        #     paragraph which is semantically closer to real evidence than
+        #     a keyword query. Falls back to base_query if LLM call fails.
+        query = await self.hyde.enhance_with_score(
+            query=base_query,
+            dimension=dimension.value,
+            company_id=company_id,
+            score=score.score,
+            level=score.level.value,
+            level_name=score.level.name_label,
+        )
+
+        logger.info(
+            f"hyde_query: company={company_id} dimension={dimension.value} "
+            f"base='{base_query[:60]}' enhanced='{query[:80]}'"
+        )
 
         # 4. Search for evidence using hybrid retrieval
-        # Uses retrieve() which is the async method on HybridRetriever
+        # No dimension filter — evidence is tagged by primary signal category,
+        # not by the dimension being justified. Rely on semantic similarity.
         results = self.retriever.search(
-        query=query,
-        top_k=15,
-        company_id=company_id,
-        dimension=dimension.value,
+            query=query,
+            top_k=15,
+            company_id=company_id,
         )
 
         # 5. Match evidence to rubric keywords → CitedEvidence
@@ -168,7 +187,7 @@ class JustificationGenerator:
         evidence_text = "\n".join([
             f"[{e.source_type}, conf={e.confidence:.2f}] {e.content[:300]}..."
             for e in cited[:5]
-        ]) or "No evidence found."
+        ]) or "No direct keyword matches found — score based on semantic similarity to rubric criteria."
 
         response = await self.router.complete(
             task=TaskType.JUSTIFICATION_GENERATION,
@@ -218,19 +237,21 @@ class JustificationGenerator:
         Match retrieved documents to rubric keywords.
 
         A document is cited if:
-        - It matches at least one rubric keyword, OR
-        - Its relevance score is > 0.7 (high semantic similarity)
+        - Any individual word from a rubric keyword phrase appears in content, OR
+        - Its RRF relevance score is > 0.003 (accounts for RRF score scale ~0.009)
         """
         if not rubric:
             return []
 
         cited = []
         for r in results:
+            # Split multi-word keywords so "data science team" matches on "data", "science", or "team"
             matched = [
                 kw for kw in rubric.keywords
-                if kw.lower() in r.content.lower()
+                if any(word in r.content.lower() for word in kw.lower().split())
             ]
-            if matched or r.score > 0.7:
+            # Lower score threshold — RRF scores are always small (~0.003–0.01)
+            if matched or r.score > 0.5:
                 cited.append(CitedEvidence(
                     evidence_id=r.doc_id,
                     content=r.content[:500],
