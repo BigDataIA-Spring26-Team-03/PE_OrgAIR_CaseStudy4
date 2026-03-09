@@ -275,3 +275,36 @@ class APIClient:
             return response
         except:
             return {"status": "not_found"}
+        
+
+    def search_evidence(self, query: str, company_id: str = None,
+                    dimension: str = None, top_k: int = 10,
+                    min_confidence: float = 0.0) -> list:
+        """Search evidence using hybrid search."""
+        params = {"query": query, "top_k": top_k, "min_confidence": min_confidence}
+        if company_id:
+            params["company_id"] = company_id
+        if dimension:
+            params["dimension"] = dimension
+        response = requests.get(f"{self.base_url}/api/v1/search", params=params)
+        return self._handle_response(response).json()
+
+    def get_justification(self, ticker: str, dimension: str) -> dict:
+        """Get score justification for a company dimension."""
+        response = requests.get(
+            f"{self.base_url}/api/v1/justification/{ticker}/{dimension}",
+            timeout=60
+        )
+        return self._handle_response(response).json()
+
+    def get_ic_prep(self, ticker: str, focus_dimensions: list = None) -> dict:
+        """Get full IC meeting preparation package."""
+        payload = {}
+        if focus_dimensions:
+            payload["focus_dimensions"] = focus_dimensions
+        response = requests.post(
+            f"{self.base_url}/api/v1/justification/{ticker}/ic-prep",
+            json=payload,
+            timeout=300
+        )
+        return self._handle_response(response).json()

@@ -93,7 +93,9 @@ page = st.sidebar.radio(
         "📄 SEC Documents",
         "🚀 Score Company (CS3)",      # ← ADD THIS
         "⭐ CS3: Org-AI-R Results",
-        "🔧 System Health"
+        "🔧 System Health",
+        "🔍 Evidence Search",
+        "📝 Score Justification"
     ]
 )
 st.sidebar.markdown("---")
@@ -1882,6 +1884,403 @@ elif page == "🔧 System Health":
         st.error(f"Error: {e}")
         st.info("**Troubleshooting:**")
         st.code("poetry run uvicorn app.main:create_app --factory --reload")
+
+elif page == "🔍 Evidence Search":
+    st.markdown('<p class="main-header">🔍 Evidence Search</p>', unsafe_allow_html=True)
+    st.caption("Search across SEC filings, job postings, patents and board signals using AI-powered hybrid search")
+
+    # Search form
+    with st.form("search_form"):
+        query = st.text_input(
+            "🔎 Search Query",
+            placeholder="e.g. AI talent hiring machine learning engineers",
+        )
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            company_filter = st.selectbox(
+                "Company",
+                ["All", "NVDA", "JPM", "WMT", "GE", "DG"]
+            )
+
+        with col2:
+            dimension_filter = st.selectbox(
+                "Dimension",
+                [
+                    "All",
+                    "data_infrastructure",
+                    "ai_governance",
+                    "technology_stack",
+                    "talent",
+                    "leadership",
+                    "use_case_portfolio",
+                    "culture"
+                ]
+            )
+
+        with col3:
+            top_k = st.slider("Results", 5, 50, 10)
+
+        with col4:
+            min_conf = st.slider("Min Confidence", 0.0, 1.0, 0.0, 0.1)
+
+        search_btn = st.form_submit_button("🔍 Search", use_container_width=True, type="primary")
+
+    # Run search
+    if search_btn:
+        if not query:
+            st.warning("Please enter a search query!")
+        else:
+            with st.spinner("Searching evidence..."):
+                try:
+                    results = api.search_evidence(
+                        query=query,
+                        company_id=company_filter if company_filter != "All" else None,
+                        dimension=dimension_filter if dimension_filter != "All" else None,
+                        top_k=top_k,
+                        min_confidence=min_conf,
+                    )
+
+                    if not results:
+                        st.warning("No results found. Try a different query or broaden your filters.")
+                    else:
+                        st.success(f"Found **{len(results)}** evidence items")
+                        st.markdown("---")
+
+                        for i, result in enumerate(results, 1):
+                            meta = result.get("metadata", {})
+                            source_type = meta.get("source_type", "unknown")
+                            company = meta.get("company_id", "N/A")
+                            dimension = meta.get("dimension", "N/A")
+                            confidence = meta.get("confidence", 0)
+                            fiscal_year = meta.get("fiscal_year", "N/A")
+                            score = result.get("score", 0)
+                            method = result.get("retrieval_method", "hybrid")
+
+                            # Source type emoji
+                            source_emoji = {
+                                "sec_10k_item_1": "📄",
+                                "sec_10k_item_1a": "⚠️",
+                                "sec_10k_item_7": "📊",
+                                "job_posting_linkedin": "💼",
+                                "job_posting_indeed": "💼",
+                                "patent_uspto": "🔬",
+                                "glassdoor_review": "⭐",
+                                "board_proxy_def14a": "👔",
+                            }.get(source_type, "📌")
+
+                            with st.expander(
+                                f"{source_emoji} [{company}] {dimension.replace('_',' ').title()} "
+                                f"| {source_type} | Score: {score:.4f}"
+                            ):
+                                col1, col2, col3, col4 = st.columns(4)
+
+                                with col1:
+                                    st.metric("Company", company)
+                                with col2:
+                                    st.metric("Dimension", dimension.replace("_", " ").title())
+                                with col3:
+                                    st.metric("Confidence", f"{confidence:.2f}")
+                                with col4:
+                                    st.metric("Fiscal Year", str(fiscal_year) if fiscal_year else "N/A")
+
+                                st.markdown("**Evidence Content:**")
+                                st.text_area(
+                                    "",
+                                    value=result.get("content", "")[:800],
+                                    height=150,
+                                    key=f"content_{i}",
+                                    disabled=True,
+                                )
+
+                                source_url = meta.get("source_url")
+                                if source_url:
+                                    st.markdown(f"[🔗 View Source]({source_url})")
+
+                                st.caption(
+                                    f"Doc ID: {result.get('doc_id','N/A')} | "
+                                    f"Method: {method} | "
+                                    f"RRF Score: {score:.6f}"
+                                )
+
+                except Exception as e:
+                    st.error(f"Search failed: {e}")
+                    st.info("Make sure the API is running and evidence has been indexed.")
+
+    # Help section
+    with st.expander("💡 Search Tips"):
+        st.markdown("""
+        **Good queries:**
+        - `AI talent machine learning engineers` → finds hiring evidence
+        - `cloud data pipeline infrastructure` → finds tech stack evidence
+        - `board AI committee governance` → finds governance evidence
+        - `patent innovation artificial intelligence` → finds patent evidence
+
+        **Filters:**
+        - **Company** → narrow to a specific ticker (NVDA, JPM, etc.)
+        - **Dimension** → narrow to a specific AI-readiness dimension
+        - **Min Confidence** → only show high-quality evidence (0.8+)
+
+        **How it works:**
+        The search combines vector search (finds by meaning) and BM25 keyword search,
+        then merges results using Reciprocal Rank Fusion for the best results.
+        """)
+
+
+# ============================================
+# 📝 SCORE JUSTIFICATION (CS4)
+# ============================================
+elif page == "📝 Score Justification":
+    st.markdown('<p class="main-header">📝 Score Justification</p>', unsafe_allow_html=True)
+    st.caption("Explain why a company scored a specific level on any AI-readiness dimension")
+
+    DIMENSIONS = [
+        "data_infrastructure",
+        "ai_governance",
+        "technology_stack",
+        "talent",
+        "leadership",
+        "use_case_portfolio",
+        "culture",
+    ]
+
+    tab1, tab2 = st.tabs(["🔍 Single Dimension", "📦 IC Meeting Prep (All 7)"])
+
+    # ------------------------------------------------------------------
+    # TAB 1: Single Dimension Justification
+    # ------------------------------------------------------------------
+    with tab1:
+        st.markdown("### Justify a Single Dimension Score")
+        st.caption("Get a cited, evidence-backed explanation for any dimension score")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            ticker = st.selectbox(
+                "Company Ticker",
+                ["NVDA", "JPM", "WMT", "GE", "DG"],
+                key="just_ticker"
+            )
+
+        with col2:
+            dimension = st.selectbox(
+                "Dimension",
+                DIMENSIONS,
+                format_func=lambda x: x.replace("_", " ").title(),
+                key="just_dim"
+            )
+
+        if st.button("🔍 Generate Justification", type="primary", use_container_width=True):
+            with st.spinner(f"Generating justification for {ticker} - {dimension}... (takes ~10 seconds)"):
+                try:
+                    result = api.get_justification(ticker, dimension)
+
+                    # Score header
+                    st.markdown("---")
+
+                    col1, col2, col3, col4 = st.columns(4)
+
+                    level_color = {
+                        5: "🟢", 4: "🔵", 3: "🟡", 2: "🟠", 1: "🔴"
+                    }.get(result.get("level", 1), "⚪")
+
+                    with col1:
+                        st.metric("Score", f"{result['score']:.1f}/100")
+                    with col2:
+                        st.metric("Level", f"{level_color} {result['level']} - {result['level_name']}")
+                    with col3:
+                        ci = result.get("confidence_interval", [0, 0])
+                        st.metric("95% CI", f"{ci[0]:.1f} – {ci[1]:.1f}")
+                    with col4:
+                        strength_emoji = {"strong": "💪", "moderate": "👍", "weak": "⚠️"}.get(
+                            result.get("evidence_strength"), "❓"
+                        )
+                        st.metric("Evidence", f"{strength_emoji} {result.get('evidence_strength','N/A').title()}")
+
+                    st.markdown("---")
+
+                    # Rubric
+                    st.markdown("#### 📋 Rubric Criteria")
+                    st.info(result.get("rubric_criteria", "N/A"))
+
+                    keywords = result.get("rubric_keywords", [])
+                    if keywords:
+                        st.markdown("**Keywords matched against:**")
+                        st.markdown(" ".join([f"`{kw}`" for kw in keywords]))
+
+                    st.markdown("---")
+
+                    # LLM Summary
+                    st.markdown("#### 📝 IC-Ready Justification")
+                    st.markdown(result.get("generated_summary", "No summary generated."))
+
+                    st.markdown("---")
+
+                    # Supporting evidence
+                    evidence = result.get("supporting_evidence", [])
+                    st.markdown(f"#### 📚 Supporting Evidence ({len(evidence)} items)")
+
+                    if evidence:
+                        for i, ev in enumerate(evidence, 1):
+                            source_emoji = {
+                                "sec_10k_item_1": "📄",
+                                "sec_10k_item_1a": "⚠️",
+                                "sec_10k_item_7": "📊",
+                                "job_posting_linkedin": "💼",
+                                "patent_uspto": "🔬",
+                                "glassdoor_review": "⭐",
+                                "board_proxy_def14a": "👔",
+                            }.get(ev.get("source_type"), "📌")
+
+                            with st.expander(
+                                f"{source_emoji} Evidence {i} | "
+                                f"{ev.get('source_type','N/A')} | "
+                                f"Confidence: {ev.get('confidence',0):.2f} | "
+                                f"Matched: {ev.get('matched_keywords',[])}"
+                            ):
+                                st.text_area(
+                                    "",
+                                    value=ev.get("content", "")[:600],
+                                    height=120,
+                                    key=f"ev_{i}",
+                                    disabled=True,
+                                )
+                                if ev.get("source_url"):
+                                    st.markdown(f"[🔗 View on SEC.gov]({ev['source_url']})")
+                    else:
+                        st.warning("No supporting evidence found. Make sure evidence is indexed.")
+
+                    # Gaps
+                    gaps = result.get("gaps_identified", [])
+                    if gaps:
+                        st.markdown("---")
+                        st.markdown("#### 🚧 Gaps (What's missing for a higher score?)")
+                        for gap in gaps:
+                            st.warning(f"• {gap}")
+
+                except Exception as e:
+                    st.error(f"Failed to generate justification: {e}")
+                    st.info("Make sure the API is running and evidence is indexed.")
+
+    # ------------------------------------------------------------------
+    # TAB 2: IC Meeting Prep (all 7 dimensions)
+    # ------------------------------------------------------------------
+    with tab2:
+        st.markdown("### IC Meeting Preparation Package")
+        st.caption("Generate a complete investment committee package covering all 7 dimensions")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            ic_ticker = st.selectbox(
+                "Company Ticker",
+                ["NVDA", "JPM", "WMT", "GE", "DG"],
+                key="ic_ticker"
+            )
+
+        with col2:
+            focus = st.multiselect(
+                "Focus Dimensions (optional — leave empty for all 7)",
+                DIMENSIONS,
+                format_func=lambda x: x.replace("_", " ").title(),
+            )
+
+        st.warning("⚠️ IC prep runs justification for all selected dimensions. This takes 1-2 minutes.")
+
+        if st.button("📦 Generate IC Package", type="primary", use_container_width=True):
+            with st.spinner(f"Generating IC package for {ic_ticker}... (1-2 minutes)"):
+                try:
+                    result = api.get_ic_prep(ic_ticker, focus if focus else None)
+
+                    st.success("✅ IC Package generated!")
+                    st.markdown("---")
+
+                    # Header metrics
+                    col1, col2, col3, col4 = st.columns(4)
+
+                    with col1:
+                        st.metric("Org-AI-R Score", f"{result.get('org_air_score', 0):.1f}")
+                    with col2:
+                        st.metric("VR Score", f"{result.get('vr_score', 0):.1f}")
+                    with col3:
+                        st.metric("HR Score", f"{result.get('hr_score', 0):.1f}")
+                    with col4:
+                        strength_emoji = {"strong": "💪", "moderate": "👍", "weak": "⚠️"}.get(
+                            result.get("avg_evidence_strength"), "❓"
+                        )
+                        st.metric("Evidence", f"{strength_emoji} {result.get('avg_evidence_strength','').title()}")
+
+                    st.markdown("---")
+
+                    # Executive summary
+                    st.markdown("#### 📋 Executive Summary")
+                    st.info(result.get("executive_summary", "N/A"))
+
+                    # Three columns: strengths, gaps, risks
+                    col1, col2, col3 = st.columns(3)
+
+                    with col1:
+                        st.markdown("#### 💪 Key Strengths")
+                        for s in result.get("key_strengths", []):
+                            st.success(f"• {s}")
+
+                    with col2:
+                        st.markdown("#### 🚧 Key Gaps")
+                        for g in result.get("key_gaps", []):
+                            st.warning(f"• {g}")
+
+                    with col3:
+                        st.markdown("#### ⚠️ Risk Factors")
+                        for r in result.get("risk_factors", []):
+                            st.error(f"• {r}")
+
+                    # Recommendation
+                    st.markdown("---")
+                    rec = result.get("recommendation", "")
+                    if "PROCEED" in rec and "CAUTION" not in rec:
+                        st.success(f"## 🟢 Recommendation: {rec}")
+                    elif "CAUTION" in rec:
+                        st.warning(f"## 🟡 Recommendation: {rec}")
+                    else:
+                        st.error(f"## 🔴 Recommendation: {rec}")
+
+                    # Dimension justifications
+                    st.markdown("---")
+                    st.markdown("#### 📊 Dimension Justifications")
+
+                    dim_justs = result.get("dimension_justifications", {})
+
+                    for dim_name, just in dim_justs.items():
+                        level = just.get("level", 1)
+                        score = just.get("score", 0)
+                        level_color = {5: "🟢", 4: "🔵", 3: "🟡", 2: "🟠", 1: "🔴"}.get(level, "⚪")
+
+                        with st.expander(
+                            f"{level_color} {dim_name.replace('_',' ').title()} — "
+                            f"Score: {score:.1f} | Level {level}: {just.get('level_name','')}"
+                        ):
+                            st.markdown(just.get("generated_summary", "No summary."))
+
+                            evidence = just.get("supporting_evidence", [])
+                            if evidence:
+                                st.caption(f"📚 {len(evidence)} evidence items | "
+                                          f"Strength: {just.get('evidence_strength','N/A')}")
+
+                            gaps = just.get("gaps_identified", [])
+                            if gaps:
+                                st.markdown("**Gaps:**")
+                                for gap in gaps[:3]:
+                                    st.caption(f"• {gap}")
+
+                    st.caption(
+                        f"Generated: {result.get('generated_at','N/A')} | "
+                        f"Total evidence: {result.get('total_evidence_count', 0)} items"
+                    )
+
+                except Exception as e:
+                    st.error(f"IC prep failed: {e}")
+                    st.info("This can fail if any dimension has no evidence. Try selecting fewer dimensions.")
 
 # Footer
 st.sidebar.markdown("---")
