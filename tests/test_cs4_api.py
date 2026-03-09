@@ -220,7 +220,7 @@ def ic_client(monkeypatch):
         key_gaps=[],
         risk_factors=[],
         recommendation="PROCEED",
-        generated_at=datetime.now(),
+        generated_at=datetime.now().isoformat(),
         total_evidence_count=1,
         avg_evidence_strength="strong",
     )
