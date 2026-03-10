@@ -17,28 +17,88 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 class SourceType(str, enum.Enum):
-    """Evidence source types produced by CS2 collectors."""
-    SEC_10K_ITEM_1 = "sec_10k_item_1"          # Business description
-    SEC_10K_ITEM_1A = "sec_10k_item_1a"         # Risk factors
-    SEC_10K_ITEM_7 = "sec_10k_item_7"           # MD&A
-    JOB_POSTING_LINKEDIN = "job_posting_linkedin"
-    JOB_POSTING_INDEED = "job_posting_indeed"
-    PATENT_USPTO = "patent_uspto"
-    PRESS_RELEASE = "press_release"
-    GLASSDOOR_REVIEW = "glassdoor_review"        # From CS3 Task 5.0c
-    BOARD_PROXY_DEF14A = "board_proxy_def14a"    # From CS3 Task 5.0d
-    ANALYST_INTERVIEW = "analyst_interview"      # NEW: DD interviews
-    DD_DATA_ROOM = "dd_data_room"               # NEW: Data room docs
+    """
+    Evidence source types produced by CS2 collectors.
+
+    """
+    # SEC filing sections (from document_chunks_sec.section)
+    SEC_10K_ITEM_1      = "sec_10k_item_1"      # Item 1 (Business)
+    SEC_10K_ITEM_1A     = "sec_10k_item_1a"     # Item 1A (Risk Factors)
+    SEC_10K_ITEM_7      = "sec_10k_item_7"      # Item 7 (MD&A)
+
+    # External signals (from external_signals.signal_type)
+    JOB_POSTING_LINKEDIN    = "job_posting_linkedin"
+    JOB_POSTING_INDEED      = "job_posting_indeed"
+    PATENT_USPTO            = "patent_uspto"
+    PRESS_RELEASE           = "press_release"
+    GLASSDOOR_REVIEW        = "glassdoor_review"
+    BOARD_PROXY_DEF14A      = "board_proxy_def14a"
+
+    # New DD source types (CS4 analyst notes)
+    ANALYST_INTERVIEW   = "analyst_interview"
+    DD_DATA_ROOM        = "dd_data_room"
+
+    @classmethod
+    def from_raw(cls, raw: str) -> Optional["SourceType"]:
+        if not raw:
+            return None
+
+        # Direct enum value match first (e.g. "sec_10k_item_1")
+        try:
+            return cls(raw.lower().strip())
+        except ValueError:
+            pass
+
+        # Map Snowflake section names → SourceType
+        SECTION_MAP: Dict[str, "SourceType"] = {
+            "item 1 (business)":    cls.SEC_10K_ITEM_1,
+            "item 1":               cls.SEC_10K_ITEM_1,
+            "item 1a (risk)":       cls.SEC_10K_ITEM_1A,
+            "item 1a":              cls.SEC_10K_ITEM_1A,
+            "item 7 (md&a)":        cls.SEC_10K_ITEM_7,
+            "item 7":               cls.SEC_10K_ITEM_7,
+            "item 2 (md&a)":        cls.SEC_10K_ITEM_7,  
+            "technology_hiring":    cls.JOB_POSTING_LINKEDIN,
+            "glassdoor_reviews":    cls.GLASSDOOR_REVIEW,
+            "board_composition":    cls.BOARD_PROXY_DEF14A,
+            "innovation_activity":  cls.PATENT_USPTO,
+            "leadership_signals":   cls.PRESS_RELEASE,
+        }
+
+        normalized = raw.strip().lower()
+        if normalized in SECTION_MAP:
+            return SECTION_MAP[normalized]
+
+        logger.warning("cs2_unknown_source_type", extra={"raw": raw})
+        return None
 
 
 class SignalCategory(str, enum.Enum):
-    """Signal categories assigned by CS2 collectors."""
-    TECHNOLOGY_HIRING = "technology_hiring"
+    """
+    Signal categories assigned by CS2 collectors.
+    These match your external_signals table signal_type values and
+    the contributing_sources in your CS3 scoring JSON.
+    """
+    TECHNOLOGY_HIRING   = "technology_hiring"
     INNOVATION_ACTIVITY = "innovation_activity"
-    DIGITAL_PRESENCE = "digital_presence"
-    LEADERSHIP_SIGNALS = "leadership_signals"
-    CULTURE_SIGNALS = "culture_signals"
-    GOVERNANCE_SIGNALS = "governance_signals"
+    DIGITAL_PRESENCE    = "digital_presence"
+    LEADERSHIP_SIGNALS  = "leadership_signals"
+    CULTURE_SIGNALS     = "culture_signals"
+    GOVERNANCE_SIGNALS  = "governance_signals"
+
+    GLASSDOOR_REVIEWS   = "glassdoor_reviews"    # your CS3 JSON uses this exact string
+    BOARD_COMPOSITION   = "board_composition"    # your CS3 JSON uses this exact string
+
+    @classmethod
+    def from_raw(cls, raw: str) -> Optional["SignalCategory"]:
+        """Safe parser for signal category strings."""
+        if not raw:
+            return None
+        try:
+            return cls(raw.lower().strip())
+        except ValueError:
+            logger.warning("cs2_unknown_signal_category", extra={"raw": raw})
+            return None
 
 
 # ---------------------------------------------------------------------------
@@ -49,9 +109,7 @@ class SignalCategory(str, enum.Enum):
 class ExtractedEntity:
     """
     A structured entity extracted from evidence text by CS2 NLP pipeline.
-
     entity_type examples: "ai_investment", "technology", "person", "dollar_amount"
-    char_start / char_end are byte offsets into CS2Evidence.content.
     """
     entity_type: str
     text: str
@@ -64,11 +122,14 @@ class ExtractedEntity:
 @dataclass
 class CS2Evidence:
     """
-    A single evidence item returned by the CS2 Evidence Collection API.
+    A single evidence item from CS2.
 
-    Mandatory fields mirror the CS2 API response schema.
-    Optional fields may be absent for older evidence items or certain source types.
-    indexed_in_cs4 / indexed_at are managed by CS4 (this service) after ingestion.
+    Maps from two sources in your actual database:
+    1. document_chunks_sec → SEC filing chunks
+    2. external_signals    → job postings, patents, glassdoor, board signals
+
+    CHANGE 3: added filing_type and section fields that actually exist
+    in your document_chunks_sec table and are useful for CS4 citations.
     """
     evidence_id: str
     company_id: str
@@ -76,15 +137,21 @@ class CS2Evidence:
     signal_category: SignalCategory
     content: str
     extracted_at: datetime
-    confidence: float                                    # 0.0 – 1.0
+    confidence: float                        # 0.0 – 1.0
 
     # Optional metadata
     fiscal_year: Optional[int] = None
     source_url: Optional[str] = None
     page_number: Optional[int] = None
+
+    # CHANGE 3: these fields exist in your actual CS2 data
+    filing_type: Optional[str] = None       # "10-K", "10-Q", "8-K"
+    section: Optional[str] = None          # "Item 1 (Business)", "Item 7 (MD&A)"
+    chunk_index: Optional[int] = None      # position within document
+
     extracted_entities: List[ExtractedEntity] = field(default_factory=list)
 
-    # Indexing status — written back by CS4 via mark_indexed()
+    # Indexing status — written back via mark_indexed()
     indexed_in_cs4: bool = False
     indexed_at: Optional[datetime] = None
 
@@ -97,7 +164,14 @@ class CS2Client:
     """
     Async HTTP client for the CS2 Evidence Collection API.
 
-    Usage (mirrors CS1Client pattern):
+    In your app, CS2 evidence is served from the SAME FastAPI instance as CS1/CS3
+    (localhost:8000). The endpoints are:
+        GET  /api/v1/evidence?company_id=NVDA
+        POST /api/v1/evidence/mark-indexed
+
+    If those endpoints don't exist yet, see the fallback note in get_evidence().
+
+    Usage:
         async with CS2Client() as client:
             evidence = await client.get_evidence("NVDA")
     """
@@ -105,7 +179,7 @@ class CS2Client:
     def __init__(
         self,
         base_url: str = "http://localhost:8000",
-        timeout: float = 60.0,          # CS2 payloads can be large
+        timeout: float = 60.0,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
@@ -139,24 +213,16 @@ class CS2Client:
         min_confidence: float = 0.0,
         indexed: Optional[bool] = None,
         since: Optional[datetime] = None,
+        limit: int = 500,              
     ) -> List[CS2Evidence]:
         """
         Fetch evidence for a company with optional filters.
 
-        Args:
-            company_id:        Company ticker or internal UUID (e.g. "NVDA").
-            source_types:      Restrict to specific source types (OR logic).
-            signal_categories: Restrict to specific signal categories (OR logic).
-            min_confidence:    Only return evidence with confidence >= this value.
-            indexed:           True → only already-indexed; False → only unindexed;
-                               None → all (default).
-            since:             Only evidence extracted after this datetime.
-
-        Returns:
-            List of CS2Evidence objects, ordered by extracted_at descending
-            (as returned by the API).
         """
-        params: Dict[str, Any] = {"company_id": company_id}
+        params: Dict[str, Any] = {
+            "company_id": company_id,
+            "limit": limit,             
+        }
 
         if source_types:
             params["source_types"] = ",".join(s.value for s in source_types)
@@ -177,10 +243,9 @@ class CS2Client:
 
     async def mark_indexed(self, evidence_ids: List[str]) -> int:
         """
-        Notify CS2 that these evidence items have been indexed in CS4.
-
-        CS2 sets indexed_in_cs4=True and records indexed_at on its side.
-        Returns the count of records actually updated.
+        Notify CS2 that these items have been indexed in CS4's ChromaDB.
+        Prevents re-indexing the same chunks on the next pipeline run.
+        Returns count of records updated.
         """
         if not evidence_ids:
             return 0
@@ -205,45 +270,89 @@ class CS2Client:
 
     def _map_evidence(self, data: dict) -> CS2Evidence:
         """
-        Map a raw evidence dict from the CS2 API to a CS2Evidence dataclass.
+        Map a raw evidence dict to CS2Evidence.
 
-        Handles:
-        - Missing optional fields gracefully (defaults to None / []).
-        - Converts source_type / signal_category strings to enums.
-        - Parses ISO-8601 extracted_at string to datetime.
-        - Builds ExtractedEntity sub-objects from the nested list.
         """
-        # Build extracted entities (may be absent for older records)
+        def _get(*keys: str, default: Any = None) -> Any:
+            """Try multiple key names, return first non-None value."""
+            for k in keys:
+                v = data.get(k)
+                if v is not None:
+                    return v
+            return default
+
+        # Parse source type — try both formats
+        raw_source = _get("source_type", "signal_type", "section", default="")
+        source_type = SourceType.from_raw(str(raw_source))
+
+        # Parse signal category
+        raw_signal = _get("signal_category", "signal_type", default="")
+        signal_category = SignalCategory.from_raw(str(raw_signal))
+
+        # If still None, derive signal from source type as fallback
+        if signal_category is None and source_type is not None:
+            signal_category = self._derive_signal_from_source(source_type)
+
+        # Parse extracted_at timestamp
+        raw_ts = _get("extracted_at", "created_at", "filing_date", default="")
+        try:
+            extracted_at = datetime.fromisoformat(str(raw_ts)) if raw_ts else datetime.now()
+        except (ValueError, TypeError):
+            extracted_at = datetime.now()
+
+        # Parse indexed_at timestamp
+        indexed_at_raw = data.get("indexed_at")
+        indexed_at: Optional[datetime] = None
+        if indexed_at_raw:
+            try:
+                indexed_at = datetime.fromisoformat(indexed_at_raw)
+            except (ValueError, TypeError):
+                pass
+
+        # Build extracted entities
         raw_entities: List[dict] = data.get("extracted_entities") or []
         extracted_entities = [self._map_entity(e) for e in raw_entities]
 
-        # Parse indexing timestamps when present
-        indexed_at_raw = data.get("indexed_at")
-        indexed_at: Optional[datetime] = (
-            datetime.fromisoformat(indexed_at_raw) if indexed_at_raw else None
-        )
-
         return CS2Evidence(
-            evidence_id=str(data["evidence_id"]),
-            company_id=str(data["company_id"]),
-            source_type=SourceType(data["source_type"]),
-            signal_category=SignalCategory(data["signal_category"]),
-            content=data.get("content", ""),
-            extracted_at=datetime.fromisoformat(data["extracted_at"]),
-            confidence=float(data.get("confidence", 0.0)),
-            # Optional metadata
-            fiscal_year=data.get("fiscal_year"),          # int or None
+            # CHANGE 5: try both "evidence_id" and "id" as the primary key
+            evidence_id=str(_get("evidence_id", "id", default="")),
+            company_id=str(_get("company_id", "ticker", default="")),
+            source_type=source_type or SourceType.SEC_10K_ITEM_1,  # safe default
+            signal_category=signal_category or SignalCategory.DIGITAL_PRESENCE,
+            # CHANGE 5: try both "content" and "chunk_text" (your Snowflake column name)
+            content=str(_get("content", "chunk_text", default="")),
+            extracted_at=extracted_at,
+            confidence=float(_get("confidence", default=0.8)),
+            fiscal_year=data.get("fiscal_year"),
             source_url=data.get("source_url"),
             page_number=data.get("page_number"),
+            # CHANGE 3: capture filing_type, section, chunk_index from SEC chunks
+            filing_type=_get("filing_type", default=None),
+            section=_get("section", default=None),
+            chunk_index=data.get("chunk_index"),
             extracted_entities=extracted_entities,
-            # Indexing status
             indexed_in_cs4=bool(data.get("indexed_in_cs4", False)),
             indexed_at=indexed_at,
         )
 
     @staticmethod
+    def _derive_signal_from_source(source_type: SourceType) -> SignalCategory:
+
+        mapping = {
+            SourceType.SEC_10K_ITEM_1:      SignalCategory.DIGITAL_PRESENCE,
+            SourceType.SEC_10K_ITEM_1A:     SignalCategory.GOVERNANCE_SIGNALS,
+            SourceType.SEC_10K_ITEM_7:      SignalCategory.LEADERSHIP_SIGNALS,
+            SourceType.JOB_POSTING_LINKEDIN: SignalCategory.TECHNOLOGY_HIRING,
+            SourceType.JOB_POSTING_INDEED:  SignalCategory.TECHNOLOGY_HIRING,
+            SourceType.PATENT_USPTO:        SignalCategory.INNOVATION_ACTIVITY,
+            SourceType.GLASSDOOR_REVIEW:    SignalCategory.CULTURE_SIGNALS,
+            SourceType.BOARD_PROXY_DEF14A:  SignalCategory.GOVERNANCE_SIGNALS,
+        }
+        return mapping.get(source_type, SignalCategory.DIGITAL_PRESENCE)
+
+    @staticmethod
     def _map_entity(data: dict) -> ExtractedEntity:
-        """Map a raw entity dict to an ExtractedEntity dataclass."""
+        """Map a raw entity dict to ExtractedEntity."""
         return ExtractedEntity(
             entity_type=data.get("entity_type", "unknown"),
             text=data.get("text", ""),

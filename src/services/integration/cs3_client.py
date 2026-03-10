@@ -39,7 +39,7 @@ class ScoreLevel(int, enum.Enum):
 
     @property
     def score_range(self) -> Tuple[int, int]:
-        return {5: (80,100), 4: (60,79), 3: (40,59), 2: (20,39), 1: (0,19)}[self.value]
+        return {5: (80, 100), 4: (60, 79), 3: (40, 59), 2: (20, 39), 1: (0, 19)}[self.value]
 
     @classmethod
     def from_score(cls, score: float) -> "ScoreLevel":
@@ -60,7 +60,8 @@ class DimensionScore:
     score: float
     level: ScoreLevel
     confidence_interval: Tuple[float, float]
-    evidence_count: int
+    evidence_count: int        # number of contributing sources for this dimension
+    confidence: float          # CHANGE 1: added per-dimension raw confidence (0-1)
     last_updated: str
 
 
@@ -81,7 +82,7 @@ class CompanyAssessment:
     hr_score: float
     synergy_score: float
     org_air_score: float
-    confidence_interval: Tuple[float, float]
+    confidence_interval: Tuple[float, float]   # overall CI for org_air_score only
     dimension_scores: Dict[Dimension, DimensionScore]
     talent_concentration: float
     position_factor: float
@@ -215,13 +216,21 @@ HARDCODED_RUBRICS: Dict[str, Dict[int, RubricCriteria]] = {
 
 
 # ---------------------------------------------------------------------------
+# In-memory assessment cache
+# avoids 7 repeat API calls during IC prep (one per dimension)
+# ---------------------------------------------------------------------------
+_assessment_cache: Dict[str, "CompanyAssessment"] = {}
+
+
+# ---------------------------------------------------------------------------
 # Client
 # ---------------------------------------------------------------------------
 
 class CS3Client:
     """
     Async HTTP client for the CS3 Scoring Engine.
-    Uses /api/v1/scoring/results/{ticker} — the actual endpoint in this app.
+    Calls: GET /api/v1/scoring/results/{ticker}
+    Rubrics are served from HARDCODED_RUBRICS (no rubric endpoint exists).
     """
 
     def __init__(
@@ -252,13 +261,21 @@ class CS3Client:
 
     async def get_assessment(self, company_id: str) -> CompanyAssessment:
         """
-        Fetch full company assessment.
-        Calls: GET /api/v1/scoring/results/{ticker}
+        Fetch full company assessment from CS3 scoring API.
+        Result is cached in-memory so repeated calls (e.g. during IC prep
+        for all 7 dimensions) only hit the network once per company.
         """
+        if company_id in _assessment_cache:
+            logger.debug("cs3_cache_hit", extra={"company_id": company_id})
+            return _assessment_cache[company_id]
+
         client = self._get_client()
         response = await client.get(f"/api/v1/scoring/results/{company_id}")
         response.raise_for_status()
-        return self._map_assessment(response.json())
+        result = self._map_assessment(response.json())
+
+        _assessment_cache[company_id] = result
+        return result
 
     async def get_dimension_score(
         self,
@@ -266,21 +283,27 @@ class CS3Client:
         dimension: Dimension,
     ) -> DimensionScore:
         """
-        Fetch a single dimension score.
-        Extracts from /api/v1/scoring/results/{ticker}
+        Fetch a single dimension score (extracted from full assessment).
+        Benefits from assessment cache — no extra network call if assessment
+        was already fetched.
         """
         assessment = await self.get_assessment(company_id)
         if dimension in assessment.dimension_scores:
             return assessment.dimension_scores[dimension]
 
-        # Fallback: return a default score if dimension not found
-        logger.warning(f"Dimension {dimension.value} not found for {company_id}, using default")
+        logger.warning(
+            "cs3_dimension_missing",
+            extra={"company_id": company_id, "dimension": dimension.value}
+        )
+
+        default_score = 50.0
         return DimensionScore(
             dimension=dimension,
-            score=50.0,
-            level=ScoreLevel.from_score(50.0),
-            confidence_interval=(40.0, 60.0),
+            score=default_score,
+            level=ScoreLevel.from_score(default_score),
+            confidence_interval=(45.0, 55.0),
             evidence_count=0,
+            confidence=0.5,
             last_updated="",
         )
 
@@ -291,7 +314,7 @@ class CS3Client:
     ) -> List[RubricCriteria]:
         """
         Return rubric criteria from hardcoded table.
-        (No /api/v1/rubrics endpoint exists in this app)
+        No /api/v1/rubrics endpoint exists — hardcoded table is the source of truth.
         """
         dim_rubrics = HARDCODED_RUBRICS.get(dimension.value, {})
 
@@ -299,37 +322,83 @@ class CS3Client:
             rubric = dim_rubrics.get(level.value)
             return [rubric] if rubric else []
 
-        # Return all levels sorted 1→5
         return [dim_rubrics[lvl] for lvl in sorted(dim_rubrics.keys())]
+
+    #added utility to clear cache between test runs or ticker switches
+    @staticmethod
+    def clear_cache() -> None:
+        """Clear the in-memory assessment cache (useful in tests)."""
+        _assessment_cache.clear()
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
     def _map_assessment(self, data: dict) -> CompanyAssessment:
-        """Map /api/v1/scoring/results response to CompanyAssessment."""
+        """
+        Map /api/v1/scoring/results response to CompanyAssessment.
+
+        Real API shape (from your CS3 output):
+        {
+          "ticker": "NVDA",
+          "final_score": 71.82,
+          "vr_score": 67.36,
+          "hr_score": 79.81,
+          "synergy_score": 68.01,
+          "position_factor": 0.428332,
+          "talent_concentration": 0.2521,
+          "confidence": {"ci_lower": 63.84, "ci_upper": 79.80, "evidence_count": 23},
+          "dimension_scores": {
+              "data_infrastructure": {
+                  "score": 64.98,
+                  "confidence": 0.9986,
+                  "total_weight": 1.3,
+                  "contributing_sources": [...]
+              }, ...
+          }
+        }
+        """
+        # Overall confidence interval — applies to org_air_score only
+        ci = data.get("confidence", {})
+        overall_ci_lower = float(ci.get("ci_lower", 0.0))
+        overall_ci_upper = float(ci.get("ci_upper", 0.0))
+
         dim_scores: Dict[Dimension, DimensionScore] = {}
 
         for dim_str, score_data in data.get("dimension_scores", {}).items():
             try:
                 dim = Dimension(dim_str)
             except ValueError:
+                logger.warning(f"Unknown dimension in CS3 response: {dim_str}")
                 continue
 
             score = float(score_data.get("score", 0.0))
             level = ScoreLevel.from_score(score)
 
-            # Get confidence interval from top-level confidence object
-            ci = data.get("confidence", {})
-            ci_lower = float(ci.get("ci_lower", score - 5))
-            ci_upper = float(ci.get("ci_upper", score + 5))
+            #  per-dimension confidence (0-1 scale) from its own field
+            # Previously the code was reading the overall CI dict for every dimension
+            dim_confidence = float(score_data.get("confidence", 0.9))
+
+            # Derive a per-dimension CI from its own confidence score.
+            # Formula: margin = score * (1 - confidence) * 0.5
+            # e.g. score=64.98, confidence=0.9986 → margin ≈ 0.05 → CI (64.93, 65.03)
+            # e.g. score=64.10, confidence=0.9355 → margin ≈ 1.48 → CI (62.62, 65.58)
+            margin = score * (1 - dim_confidence) * 0.5
+            dim_ci = (round(score - margin, 2), round(score + margin, 2))
+
+            # evidence_count from total_weight (per-dimension proxy)
+            # Previously read from top-level confidence.evidence_count (=23 for ALL dims)
+            # total_weight (e.g. 1.3) × 10 gives a reasonable source-count approximation
+            total_weight = float(score_data.get("total_weight", 1.0))
+            evidence_count = max(1, round(total_weight * 10))
 
             dim_scores[dim] = DimensionScore(
                 dimension=dim,
                 score=score,
                 level=level,
-                confidence_interval=(ci_lower, ci_upper),
-                evidence_count=int(ci.get("evidence_count", 0)),
+                confidence_interval=dim_ci,        # now per-dimension ✅
+                evidence_count=evidence_count,      # now per-dimension ✅
+                confidence=dim_confidence,          # raw 0-1 value stored ✅
                 last_updated=data.get("scored_at", ""),
             )
 
@@ -340,10 +409,7 @@ class CS3Client:
             hr_score=float(data.get("hr_score", 0.0)),
             synergy_score=float(data.get("synergy_score", 0.0)),
             org_air_score=float(data.get("final_score", 0.0)),
-            confidence_interval=(
-                float(data.get("confidence", {}).get("ci_lower", 0.0)),
-                float(data.get("confidence", {}).get("ci_upper", 0.0)),
-            ),
+            confidence_interval=(overall_ci_lower, overall_ci_upper),  # overall only
             dimension_scores=dim_scores,
             talent_concentration=float(data.get("talent_concentration", 0.0)),
             position_factor=float(data.get("position_factor", 0.0)),
