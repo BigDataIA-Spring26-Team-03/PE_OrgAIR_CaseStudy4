@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import os
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -48,7 +49,7 @@ class HybridRetriever:
 
     def __init__(
         self,
-        persist_dir: str = "./chroma_data",
+        persist_dir: str = os.getenv("CHROMA_PERSIST_DIR", "./chroma_data"),
         dense_weight: float = 0.6,    # how much to trust vector search
         sparse_weight: float = 0.4,   # how much to trust BM25
         rrf_k: int = 60,              # RRF constant (standard value)
@@ -74,7 +75,7 @@ class HybridRetriever:
         dimension_mapper: DimensionMapper,
     ) -> int:
         """
-        Index CS2 evidence into both ChromaDB (dense) and BM25 (sparse).
+        Index CS2 and CS3 evidence into both ChromaDB (dense) and BM25 (sparse).
 
         Returns number of documents indexed.
         """
@@ -93,6 +94,7 @@ class HybridRetriever:
                 "company_id": e.company_id,
                 "source_type": e.source_type.value,
                 "signal_category": e.signal_category.value,
+                "dimension": dimension_mapper.get_primary_dimension(e.signal_category).value,
                 "confidence": e.confidence,
                 "source_url": e.source_url or "",
             }
