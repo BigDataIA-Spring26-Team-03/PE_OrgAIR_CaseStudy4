@@ -275,7 +275,10 @@ class APIClient:
             return response
         except:
             return {"status": "not_found"}
+<<<<<<< HEAD
 
+=======
+>>>>>>> 011acc3 (feat: onboard any company pipeline)
     def search_evidence(self, query: str, company_id: str = None,
                     dimension: str = None, top_k: int = 10,
                     min_confidence: float = 0.0) -> list:
@@ -306,7 +309,11 @@ class APIClient:
             json=payload,
             timeout=300
         )
+<<<<<<< HEAD
 
         return self._handle_response(response).json()
      
 
+=======
+        return self._handle_response(response).json()
+>>>>>>> 011acc3 (feat: onboard any company pipeline)

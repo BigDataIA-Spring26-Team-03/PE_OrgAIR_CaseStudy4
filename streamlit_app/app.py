@@ -1971,12 +1971,18 @@ elif page == "🔍 Evidence Search":
     st.markdown('<p class="main-header">🔍 Evidence Search</p>', unsafe_allow_html=True)
     st.caption("Search across SEC filings, job postings, patents and board signals using AI-powered hybrid search")
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> 011acc3 (feat: onboard any company pipeline)
     # Company selector OUTSIDE form so radio works dynamically
     known_tickers_s = sorted([c['ticker'] for c in api.list_companies(limit=100) if c.get('ticker')])
     company_filter = st.selectbox("Company", ["All"] + known_tickers_s, key="s_co_select")
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> 011acc3 (feat: onboard any company pipeline)
     # Search form
     with st.form("search_form"):
         query = st.text_input(
@@ -1987,6 +1993,7 @@ elif page == "🔍 Evidence Search":
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
+<<<<<<< HEAD
 
             company_filter = st.selectbox(
                 "Company",
@@ -1996,6 +2003,10 @@ elif page == "🔍 Evidence Search":
             st.caption(f"Searching: {company_filter}")
 
 
+=======
+            st.caption(f"Searching: {company_filter}")
+
+>>>>>>> 011acc3 (feat: onboard any company pipeline)
         with col2:
             dimension_filter = st.selectbox(
                 "Dimension",
@@ -2149,11 +2160,17 @@ elif page == "📝 Score Justification":
         col1, col2 = st.columns(2)
 
         with col1:
+<<<<<<< HEAD
 
             known_tickers_j = sorted([c['ticker'] for c in api.list_companies(limit=100) if c.get('ticker')])
             ticker = st.selectbox("Company Ticker", known_tickers_j, key="j_ticker_select")
 
 
+=======
+            known_tickers_j = sorted([c['ticker'] for c in api.list_companies(limit=100) if c.get('ticker')])
+            ticker = st.selectbox("Company Ticker", known_tickers_j, key="j_ticker_select")
+
+>>>>>>> 011acc3 (feat: onboard any company pipeline)
         with col2:
             dimension = st.selectbox(
                 "Dimension",
@@ -2264,11 +2281,17 @@ elif page == "📝 Score Justification":
         col1, col2 = st.columns(2)
 
         with col1:
+<<<<<<< HEAD
 
             known_tickers_ic = sorted([c['ticker'] for c in api.list_companies(limit=100) if c.get('ticker')])
             ic_ticker = st.selectbox("Company Ticker", known_tickers_ic, key="ic_ticker_select")
 
 
+=======
+            known_tickers_ic = sorted([c['ticker'] for c in api.list_companies(limit=100) if c.get('ticker')])
+            ic_ticker = st.selectbox("Company Ticker", known_tickers_ic, key="ic_ticker_select")
+
+>>>>>>> 011acc3 (feat: onboard any company pipeline)
         with col2:
             focus = st.multiselect(
                 "Focus Dimensions (optional — leave empty for all 7)",
