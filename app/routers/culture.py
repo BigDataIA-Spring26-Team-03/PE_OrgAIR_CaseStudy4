@@ -22,6 +22,7 @@ router = APIRouter(prefix="/culture-signals", tags=["Culture Signals"])
 
 @router.get("", response_model=CultureSignalListResponse)
 async def list_all_signals(
+    
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100)
 ):

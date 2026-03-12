@@ -113,25 +113,27 @@ def get_evidence(
     # 2. External signals
     # ------------------------------------------------------------------
     ext_query = """
-        SELECT
-            id                      AS evidence_id,
-            company_id              AS company_id,
-            CASE category
-                WHEN 'technology_hiring'  THEN 'job_posting_linkedin'
-                WHEN 'innovation_activity' THEN 'patent_uspto'
-                WHEN 'digital_presence'   THEN 'sec_10k_item_1'
-                WHEN 'leadership_signals' THEN 'board_proxy_def14a'
-                ELSE 'sec_10k_item_1'
-            END                     AS source_type,
-            category                AS signal_category,
-            raw_value               AS content,
-            confidence              AS confidence,
-            YEAR(signal_date)       AS fiscal_year,
-            NULL                    AS source_url,
-            created_at              AS created_at
-        FROM external_signals
-        WHERE company_id = %(ticker)s
-          AND confidence >= %(min_confidence)s
+    SELECT
+        es.id                   AS evidence_id,
+        c.ticker                AS company_id,
+        CASE es.category
+            WHEN 'technology_hiring'  THEN 'job_posting_linkedin'
+            WHEN 'innovation_activity' THEN 'patent_uspto'
+            WHEN 'digital_presence'   THEN 'sec_10k_item_1'
+            WHEN 'leadership_signals' THEN 'board_proxy_def14a'
+            ELSE 'sec_10k_item_1'
+        END                     AS source_type,
+        es.category             AS signal_category,
+        es.raw_value            AS content,
+        es.confidence           AS confidence,
+        YEAR(es.signal_date)    AS fiscal_year,
+        NULL                    AS source_url,
+        es.created_at           AS created_at
+    FROM external_signals es
+    JOIN companies c ON es.company_id = c.id
+    WHERE c.ticker = %(ticker)s
+      AND es.confidence >= %(min_confidence)s
+      AND c.is_deleted = FALSE
     """
     if since:
         ext_query += " AND created_at >= %(since)s"
