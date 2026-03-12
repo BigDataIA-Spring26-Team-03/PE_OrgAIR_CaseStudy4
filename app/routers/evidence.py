@@ -89,8 +89,19 @@ def get_evidence(
         SELECT
             c.id                    AS evidence_id,
             d.ticker                AS company_id,
-            'sec_10k_item_1'        AS source_type,
-            'digital_presence'      AS signal_category,
+            CASE c.section
+                WHEN 'Item 1 (Business)' THEN 'sec_10k_item_1'
+                WHEN 'Item 1A (Risk)'    THEN 'sec_10k_item_1a'
+                WHEN 'Item 7 (MD&A)'     THEN 'sec_10k_item_7'
+                WHEN 'Item 2 (MD&A)'     THEN 'sec_10k_item_7'
+                ELSE 'sec_10k_item_1'
+            END                     AS source_type,
+            CASE c.section
+                WHEN 'Item 1A (Risk)'    THEN 'governance_signals'
+                WHEN 'Item 7 (MD&A)'     THEN 'leadership_signals'
+                WHEN 'Item 2 (MD&A)'     THEN 'leadership_signals'
+                ELSE 'digital_presence'
+            END                     AS signal_category,
             c.content               AS content,
             0.85                    AS confidence,
             YEAR(d.filing_date)     AS fiscal_year,
@@ -99,10 +110,10 @@ def get_evidence(
         FROM document_chunks_sec c
         JOIN documents_sec d ON c.document_id = d.id
         WHERE d.ticker = %(ticker)s
-          AND 0.85 >= %(min_confidence)s
+        AND 0.85 >= %(min_confidence)s
     """
     if since:
-        sec_query += " AND d.created_at >= %(since)s"
+        ext_query += " AND es.created_at >= %(since)s"
     try:
         sec_rows = db.execute_query(sec_query, {"ticker": ticker, "min_confidence": min_confidence, "since": since})
         rows.extend(sec_rows)
@@ -114,24 +125,25 @@ def get_evidence(
     # ------------------------------------------------------------------
     ext_query = """
         SELECT
-            id                      AS evidence_id,
-            company_id              AS company_id,
-            CASE category
-                WHEN 'technology_hiring'  THEN 'job_posting_linkedin'
+            es.id                   AS evidence_id,
+            c.ticker                AS company_id,
+            CASE es.category
+                WHEN 'technology_hiring'   THEN 'job_posting_linkedin'
                 WHEN 'innovation_activity' THEN 'patent_uspto'
-                WHEN 'digital_presence'   THEN 'sec_10k_item_1'
-                WHEN 'leadership_signals' THEN 'board_proxy_def14a'
+                WHEN 'digital_presence'    THEN 'sec_10k_item_1'
+                WHEN 'leadership_signals'  THEN 'board_proxy_def14a'
                 ELSE 'sec_10k_item_1'
             END                     AS source_type,
-            category                AS signal_category,
-            raw_value               AS content,
-            confidence              AS confidence,
-            YEAR(signal_date)       AS fiscal_year,
+            es.category             AS signal_category,
+            es.raw_value            AS content,
+            es.confidence           AS confidence,
+            YEAR(es.signal_date)    AS fiscal_year,
             NULL                    AS source_url,
-            created_at              AS created_at
-        FROM external_signals
-        WHERE company_id = %(ticker)s
-          AND confidence >= %(min_confidence)s
+            es.created_at           AS created_at
+        FROM external_signals es
+        JOIN companies c ON es.company_id = c.id
+        WHERE UPPER(c.ticker) = %(ticker)s
+        AND es.confidence >= %(min_confidence)s
     """
     if since:
         ext_query += " AND created_at >= %(since)s"
@@ -202,6 +214,8 @@ def get_evidence(
     # ------------------------------------------------------------------
     # Apply indexed filter via Redis
     # ------------------------------------------------------------------
+    # Apply indexed filter via Redis
+    rows = [{k.lower(): v for k, v in row.items()} for row in rows]
     rows = _apply_indexed_filter(rows, indexed)
 
     logger.info("evidence_fetched", ticker=ticker, count=len(rows), indexed_filter=indexed)

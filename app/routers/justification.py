@@ -1,6 +1,5 @@
 # app/routers/justification.py
 
-from functools import lru_cache
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Body, HTTPException
@@ -22,14 +21,22 @@ router = APIRouter(prefix="/justification", tags=["Justification"])
 # Singletons
 # ---------------------------------------------------------------------------
 
-@lru_cache
+_generator: Optional[JustificationGenerator] = None
+_ic_workflow: Optional[ICPrepWorkflow] = None
+
+
 def get_generator() -> JustificationGenerator:
-    return JustificationGenerator()
+    global _generator
+    if _generator is None:
+        _generator = JustificationGenerator()
+    return _generator
 
 
-@lru_cache
 def get_ic_workflow() -> ICPrepWorkflow:
-    return ICPrepWorkflow()
+    global _ic_workflow
+    if _ic_workflow is None:
+        _ic_workflow = ICPrepWorkflow()
+    return _ic_workflow
 
 
 # ---------------------------------------------------------------------------
@@ -38,7 +45,7 @@ def get_ic_workflow() -> ICPrepWorkflow:
 
 def _parse_dimension(dimension: str) -> Dimension:
     try:
-        return Dimension(dimension)
+        return Dimension(dimension.lower())
     except ValueError:
         valid = [d.value for d in Dimension]
         raise HTTPException(
@@ -112,7 +119,7 @@ async def get_justification(ticker: str, dimension: str) -> ScoreJustificationRe
     dim = _parse_dimension(dimension)
     try:
         justification = await get_generator().generate_justification(
-            company_id=ticker,
+            company_id=ticker.upper(),
             dimension=dim,
         )
         return _justification_to_response(justification)
@@ -137,7 +144,7 @@ async def prepare_ic_meeting(
 
     try:
         pkg = await get_ic_workflow().prepare_meeting(
-            company_id=ticker,
+            company_id=ticker.upper(),
             focus_dimensions=focus_dimensions,
         )
         return _ic_package_to_response(pkg)
