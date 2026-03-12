@@ -15,7 +15,7 @@ for path in ["/opt/airflow", "/opt/airflow/src", "/opt/airflow/app"]:
 from airflow.decorators import dag, task
 
 CS2_BASE_URL = os.environ.get("CS2_BASE_URL", "http://localhost:8000")
-CHROMA_PERSIST_DIR = os.environ.get("CHROMA_PERSIST_DIR", "/opt/airflow/chroma_data")
+CHROMA_PERSIST_DIR = os.environ.get("CHROMA_PERSIST_DIR", "/data/chroma")
 
 COMPANIES = ["NVDA", "JPM", "WMT", "GE", "DG"]
 
