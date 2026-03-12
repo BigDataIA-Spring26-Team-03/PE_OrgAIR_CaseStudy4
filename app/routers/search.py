@@ -7,15 +7,18 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.models.search import SearchResultResponse
 from src.services.retrieval.hybrid import HybridRetriever
-
+from src.services.integration.cs3_client import Dimension
+VALID_DIMENSIONS = {d.value for d in Dimension}
 router = APIRouter(prefix="/search", tags=["Search"])
 
 
-@lru_cache
-def get_retriever() -> HybridRetriever:
-    """Singleton HybridRetriever — initialises ChromaDB + BM25 once."""
-    return HybridRetriever()
+_retriever: Optional[HybridRetriever] = None
 
+def get_retriever() -> HybridRetriever:
+    global _retriever
+    if _retriever is None:
+        _retriever = HybridRetriever()
+    return _retriever
 
 @router.get("", response_model=List[SearchResultResponse])
 def search_evidence(
@@ -42,6 +45,11 @@ def search_evidence(
 
     Results are sorted by combined RRF score (highest first).
     """
+    if dimension and dimension not in VALID_DIMENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid dimension '{dimension}'. Valid: {sorted(VALID_DIMENSIONS)}"
+        )   
     try:
         results = get_retriever().search(
             query=query,

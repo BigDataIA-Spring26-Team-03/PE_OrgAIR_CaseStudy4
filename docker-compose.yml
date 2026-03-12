@@ -33,6 +33,9 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    volumes:
+    - redis_data:/data
+    command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -100,7 +103,7 @@ services:
       _PIP_ADDITIONAL_REQUIREMENTS: "requests structlog snowflake-connector-python yfinance chromadb sentence-transformers rank-bm25 httpx litellm"
       API_BASE_URL: http://host.docker.internal:8000
       CS2_BASE_URL: http://host.docker.internal:8000
-      CHROMA_PERSIST_DIR: /opt/airflow/chroma_data
+      CHROMA_PERSIST_DIR: /data/chroma
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
 
@@ -116,7 +119,7 @@ services:
       - ./src:/opt/airflow/src
       - ./app:/opt/airflow/app
       - ./results:/opt/airflow/results
-      - chroma_data:/opt/airflow/chroma_data
+      - chroma_data:/data/chroma
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -136,7 +139,7 @@ services:
       _PIP_ADDITIONAL_REQUIREMENTS: "requests structlog snowflake-connector-python yfinance chromadb sentence-transformers rank-bm25 httpx litellm"
       API_BASE_URL: http://host.docker.internal:8000
       CS2_BASE_URL: http://host.docker.internal:8000
-      CHROMA_PERSIST_DIR: /opt/airflow/chroma_data
+      CHROMA_PERSIST_DIR: /data/chroma
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
 
@@ -152,7 +155,7 @@ services:
       - ./src:/opt/airflow/src
       - ./app:/opt/airflow/app
       - ./results:/opt/airflow/results
-      - chroma_data:/opt/airflow/chroma_data
+      - chroma_data:/data/chroma
     depends_on:
       airflow-init:
         condition: service_completed_successfully

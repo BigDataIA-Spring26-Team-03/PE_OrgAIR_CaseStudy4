@@ -1,6 +1,7 @@
 # src/services/workflows/ic_prep.py
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -46,19 +47,24 @@ class ICPrepWorkflow:
             focus_dimensions = list(Dimension)
 
         # 1. Fetch company from CS1
-        async with CS1Client() as cs1:
+        async with self.cs1 as cs1:
             company = await cs1.get_company(company_id)
 
         # 2. Fetch assessment from CS3
-        async with CS3Client() as cs3:
+        async with self.cs3 as cs3:
             assessment = await cs3.get_assessment(company_id)
 
         # 3. Generate justifications for each dimension
-        justifications: Dict[Dimension, ScoreJustification] = {}
-        for dim in focus_dimensions:
-            justifications[dim] = await self.generator.generate_justification(
+        tasks = [
+            self.generator.generate_justification(
                 company_id=company_id, dimension=dim
             )
+            for dim in focus_dimensions
+        ]
+        results = await asyncio.gather(*tasks)
+        justifications: Dict[Dimension, ScoreJustification] = dict(
+            zip(focus_dimensions, results)
+        )
 
         # 4. Synthesise findings
         strengths = self._identify_strengths(assessment, justifications)
@@ -103,14 +109,17 @@ class ICPrepWorkflow:
         justifications: Dict[Dimension, ScoreJustification],
     ) -> List[str]:
         """Identify top 3 strengths."""
-        strengths = []
-        for dim, j in justifications.items():
-            if j.level >= 4 and j.evidence_strength in ["strong", "moderate"]:
-                strengths.append(
-                    f"{dim.value.replace('_', ' ').title()}: Level {j.level} ({j.level_name}) "
-                    f"- {len(j.supporting_evidence)} evidence items"
-                )
-        return sorted(strengths, key=lambda x: -int(x.split("Level ")[1][0]))[:3]
+        strengths_with_level = [
+            (dim, j)
+            for dim, j in justifications.items()
+            if j.level >= 4 and j.evidence_strength in ["strong", "moderate"]
+        ]
+        strengths_with_level.sort(key=lambda x: -x[1].level)
+        return [
+            f"{dim.value.replace('_', ' ').title()}: Level {j.level} ({j.level_name}) "
+            f"- {len(j.supporting_evidence)} evidence items"
+            for dim, j in strengths_with_level[:3]
+        ]
 
     def _identify_gaps(
         self,
