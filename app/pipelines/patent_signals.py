@@ -27,7 +27,7 @@ from app.services.snowflake import SnowflakeService
 
 logger = structlog.get_logger()
 
-# USPTO Name Mapping
+# USPTO Name Mapping — known companies for accuracy
 COMPANY_USPTO_NAMES = {
     "WMT": "Walmart Apollo, LLC",
     "JPM": "JPMORGAN CHASE BANK, N.A.",
@@ -38,10 +38,96 @@ COMPANY_USPTO_NAMES = {
     "HCA": "HCA Holdings, Inc.",
     "ADP": "AUTOMATIC DATA PROCESSING, INC.",
     "PAYX": "Paychex Time & Attendance, Inc.",
-    "NVDA":"NVIDIA Corporation",
-    "DG":"Dollar General",
-    "GE":"General Electric"
+    "NVDA": "NVIDIA Corporation",
+    "DG": "Dollar General",
+    "GE": "General Electric",
+    "MSFT": "Microsoft Corporation",
+    "AAPL": "Apple Inc.",
+    "AMZN": "Amazon Technologies, Inc.",
+    "GOOGL": "Google LLC",
+    "META": "Meta Platforms, Inc.",
+    "TSLA": "Tesla, Inc.",
+    "JNJ": "Johnson & Johnson",
 }
+
+
+def get_uspto_name(ticker: str, fallback_name: str = None, api_key: str = None) -> str:
+    """
+    Get USPTO assignee name for any ticker dynamically.
+    1. Check hardcoded map first (exact legal names for known companies)
+    2. Search USPTO assignee API directly using SEC company name
+    3. Fall back to SEC EDGAR name or ticker
+    """
+    import requests as req
+    ticker = ticker.upper()
+
+    # Check hardcoded map first
+    if ticker in COMPANY_USPTO_NAMES:
+        return COMPANY_USPTO_NAMES[ticker]
+
+    # Step 1: Get company name from SEC EDGAR
+    sec_name = None
+    try:
+        headers = {"User-Agent": "PE-OrgAIR research@example.com"}
+        resp = req.get(
+            "https://www.sec.gov/files/company_tickers.json",
+            headers=headers, timeout=10
+        )
+        if resp.status_code == 200:
+            for entry in resp.json().values():
+                if str(entry.get("ticker", "")).upper() == ticker:
+                    sec_name = entry.get("title", "")
+                    break
+    except Exception as e:
+        logger.warning(f"SEC name lookup failed for {ticker}: {e}")
+
+    search_name = sec_name or fallback_name or ticker
+
+    # Step 2: Search USPTO assignee API for exact legal name
+    try:
+        from app.config import settings
+        key = api_key or getattr(settings, "uspto_api_key", None)
+        if key and search_name:
+            # Use first word of company name for broader search
+            search_term = search_name.split()[0]
+            headers = {"X-Api-Key": key}
+            resp = req.post(
+                "https://search.patentsview.org/api/v1/assignee/",
+                json={
+                    "q": {"_text_phrase": {"assignee_organization": search_term}},
+                    "f": ["assignee_organization"],
+                    "o": {"per_page": 10}
+                },
+                headers=headers,
+                timeout=15
+            )
+            if resp.status_code == 200:
+                assignees = resp.json().get("assignees", [])
+                # Find best match — prefer "Technologies" or "Inc" variants
+                for a in assignees:
+                    org = a.get("assignee_organization", "")
+                    if search_term.upper() in org.upper() and (
+                        "TECHNOLOG" in org.upper() or
+                        "INC" in org.upper() or
+                        "CORP" in org.upper() or
+                        "LLC" in org.upper()
+                    ):
+                        logger.info(f"Dynamic USPTO assignee: {ticker} -> {org}")
+                        COMPANY_USPTO_NAMES[ticker] = org  # cache
+                        return org
+                # Fallback to first result
+                if assignees:
+                    org = assignees[0].get("assignee_organization", "")
+                    if org:
+                        COMPANY_USPTO_NAMES[ticker] = org
+                        return org
+    except Exception as e:
+        logger.warning(f"USPTO assignee lookup failed for {ticker}: {e}")
+
+    # Final fallback
+    result = sec_name or fallback_name or ticker
+    logger.info(f"USPTO name fallback: {ticker} -> {result}")
+    return result
 
 
 class PatentSignalCollector:
@@ -137,7 +223,9 @@ class PatentSignalCollector:
                 "q": {
                     "_and": [
                         {
-                            "assignees.assignee_organization": company_name
+                            "_text_phrase": {
+                                "assignees.assignee_organization": company_name.split()[0].strip().rstrip(",").rstrip(".")
+                            }
                         },
                         {
                             "_begins": {
@@ -488,11 +576,11 @@ class PatentSignalPipeline:
         
         for company in companies:
             ticker = company.get('ticker')
-            if ticker and ticker.upper() in COMPANY_USPTO_NAMES:
+            if ticker:  # include ALL companies with tickers
                 filtered.append(company)
-        
+
         self.logger.info(
-            "Filtered companies with USPTO mappings",
+            "Companies ready for patent collection",
             total=len(companies),
             filtered=len(filtered)
         )
@@ -504,11 +592,8 @@ class PatentSignalPipeline:
         company_id = company['id']
         company_name = company['name']
         
-        # Get USPTO name
-        uspto_name = COMPANY_USPTO_NAMES.get(ticker)
-        if not uspto_name:
-            self.logger.warning("No USPTO name mapping", ticker=ticker)
-            return None
+        # Get USPTO name dynamically for any ticker
+        uspto_name = get_uspto_name(ticker, company_name)
         
         self.logger.info(
             "Processing company",
@@ -812,7 +897,7 @@ async def collect_patent_signals_real(
     signal = ExternalSignal(
         id=patent_data['id'],
         company_id=company_id,
-        category=SignalCategory.patents,
+        category=SignalCategory.INNOVATION_ACTIVITY,
         source=SignalSource.external,
         signal_date=patent_data['signal_date'],
         score=int(patent_data['normalized_score']),

@@ -1,8 +1,6 @@
 # app/pipelines/board_collector.py
 # SEC EDGAR proxy-statement fetcher — clean text extraction for LLM pipeline.
-
 from __future__ import annotations
-
 import json
 import re
 import time
@@ -10,16 +8,12 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime
-
 import requests
 from bs4 import BeautifulSoup
-
 from app.pipelines.document_chunker_s3 import normalize_ws
-
 logger = logging.getLogger(__name__)
 
-
-# SEC EDGAR CIK numbers for known companies (fast-path cache)
+# SEC EDGAR CIK numbers for known companies (cache)
 COMPANY_CIKS: Dict[str, str] = {
     "NVDA": "1045810",
     "JPM": "19617",
@@ -62,9 +56,47 @@ EDGAR_HEADERS = {
 }
 
 
-class BoardCompositionCollector:
-    """Collect board composition data from SEC DEF 14A proxy statements.
+# In-memory cache for dynamically looked up CIKs
+_CIK_CACHE: Dict[str, str] = {}
+
+def get_cik_for_ticker(ticker: str) -> Optional[str]:
     """
+    Dynamically look up CIK from SEC EDGAR for any ticker.
+    Uses SEC official company_tickers.json which maps ALL tickers to CIKs.
+    """
+    ticker = ticker.upper()
+
+    # Check hardcoded map first
+    if ticker in COMPANY_CIKS:
+        return COMPANY_CIKS[ticker]
+
+    # Check in-memory cache
+    if ticker in _CIK_CACHE:
+        return _CIK_CACHE[ticker]
+
+    # Use SEC official ticker->CIK mapping file
+    try:
+        url = "https://www.sec.gov/files/company_tickers.json"
+        resp = requests.get(url, headers=EDGAR_HEADERS, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            for entry in data.values():
+                if str(entry.get("ticker", "")).upper() == ticker:
+                    cik = str(entry.get("cik_str", ""))
+                    if cik:
+                        logger.info(f"SEC ticker map: {ticker} -> CIK {cik}")
+                        _CIK_CACHE[ticker] = cik
+                        COMPANY_CIKS[ticker] = cik
+                        return cik
+    except Exception as e:
+        logger.warning(f"SEC ticker map lookup failed for {ticker}: {e}")
+
+    logger.warning(f"Could not find CIK for ticker {ticker}")
+    return None
+
+
+class BoardCompositionCollector:
+    """Collect board composition data from SEC DEF 14A proxy statements."""
 
     def __init__(self, data_dir: str = "data/board"):
         self.data_dir = Path(data_dir)
@@ -75,14 +107,9 @@ class BoardCompositionCollector:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-
-    def collect_board_data(
-        self, ticker: str, use_cache: bool = True
-    ) -> Dict:
-        """Main entry point: fetch proxy, extract clean text + committees + strategy.
-        """
+    def collect_board_data(self, ticker: str, use_cache: bool = True) -> Dict:
+        """Main entry point: fetch proxy, extract clean text + committees + strategy."""
         ticker = ticker.upper()
-
         if use_cache:
             cached = self.load_from_cache(ticker)
             if cached:
@@ -101,7 +128,6 @@ class BoardCompositionCollector:
 
         raw_text = raw_result["raw_text"]
         text_lower = raw_text.lower()
-
         committees = self._extract_committees(text_lower)
         strategy_text = self._extract_strategy_text(text_lower)
 
@@ -112,7 +138,6 @@ class BoardCompositionCollector:
             "strategy_text": strategy_text,
             "source_meta": raw_result.get("source_meta", {}),
         }
-
         self._cache_results(ticker, data)
         return data
 
@@ -143,10 +168,11 @@ class BoardCompositionCollector:
         raw_text = soup.get_text(separator="\n", strip=True)
         raw_text = normalize_ws(raw_text)
 
+        cik = get_cik_for_ticker(ticker) or ""
         result = {
             "ticker": ticker,
             "source_meta": {
-                "cik": COMPANY_CIKS.get(ticker, ""),
+                "cik": cik,
                 "filing_type": "DEF 14A",
                 "collected_at": datetime.now().isoformat(),
             },
@@ -157,30 +183,25 @@ class BoardCompositionCollector:
         with open(raw_cache, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2)
         logger.info(f"Cached raw text to {raw_cache}")
-
         return result
 
     # ------------------------------------------------------------------
     # EDGAR fetching
     # ------------------------------------------------------------------
-
     def _fetch_latest_proxy(self, ticker: str) -> Optional[str]:
         """Fetch the most recent DEF 14A filing HTML from EDGAR."""
-        cik = lookup_cik(ticker)
+
+        cik = get_cik_for_ticker(ticker)
         if not cik:
             logger.warning(f"No CIK found for ticker {ticker}")
             return None
 
-        submissions_url = (
-            f"https://data.sec.gov/submissions/CIK{cik.zfill(10)}.json"
-        )
-
+        submissions_url = f"https://data.sec.gov/submissions/CIK{cik.zfill(10)}.json"
         try:
             logger.info(f"Fetching EDGAR submissions for {ticker} (CIK {cik})")
             resp = requests.get(submissions_url, headers=EDGAR_HEADERS, timeout=15)
             resp.raise_for_status()
             data = resp.json()
-
             filings = data.get("filings", {}).get("recent", {})
             forms = filings.get("form", [])
             accessions = filings.get("accessionNumber", [])
@@ -212,12 +233,10 @@ class BoardCompositionCollector:
     # ------------------------------------------------------------------
     # Deterministic text extraction
     # ------------------------------------------------------------------
-
     def _extract_committees(self, full_text_lower: str) -> List[str]:
         """Extract board committee names from the proxy text."""
         committees: List[str] = []
         seen: set = set()
-
         committee_patterns = [
             r"(audit\s+committee)",
             r"(compensation\s+committee)",
@@ -231,7 +250,6 @@ class BoardCompositionCollector:
             r"(cyber(?:security)?\s+committee)",
             r"(data\s+(?:\w+\s+)?committee)",
         ]
-
         for pattern in committee_patterns:
             matches = re.findall(pattern, full_text_lower)
             for m in matches:
@@ -239,7 +257,6 @@ class BoardCompositionCollector:
                 if name not in seen:
                     committees.append(name)
                     seen.add(name)
-
         logger.info(f"Extracted {len(committees)} committees")
         return committees
 
@@ -252,7 +269,6 @@ class BoardCompositionCollector:
             "digital transformation",
             "technology strategy",
         ]
-
         passages: List[str] = []
         sentences = re.split(r"[.!?]+", full_text_lower)
         for sentence in sentences:
@@ -260,13 +276,11 @@ class BoardCompositionCollector:
                 clean = sentence.strip()
                 if 20 < len(clean) < 500:
                     passages.append(clean)
-
         return ". ".join(passages[:10])
 
     # ------------------------------------------------------------------
     # Caching
     # ------------------------------------------------------------------
-
     def _cache_results(self, ticker: str, data: Dict) -> None:
         """Save parsed board data to JSON cache."""
         cache_file = self.data_dir / f"{ticker}.json"
@@ -277,7 +291,6 @@ class BoardCompositionCollector:
             "member_count": len(data.get("members", [])),
             **data,
         }
-        # Don't cache the full raw_text in the board cache (it's in board_raw/)
         payload.pop("raw_text", None)
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
@@ -291,7 +304,6 @@ class BoardCompositionCollector:
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            # Only use cache if it has members (i.e., LLM extraction already ran)
             if not data.get("members"):
                 return None
             logger.info(f"Loaded board data from cache for {ticker}")
