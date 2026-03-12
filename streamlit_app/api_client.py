@@ -275,7 +275,6 @@ class APIClient:
             return response
         except:
             return {"status": "not_found"}
-        
 
     def search_evidence(self, query: str, company_id: str = None,
                     dimension: str = None, top_k: int = 10,
@@ -307,4 +306,7 @@ class APIClient:
             json=payload,
             timeout=300
         )
+
         return self._handle_response(response).json()
+     
+

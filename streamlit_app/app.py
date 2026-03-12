@@ -1619,7 +1619,89 @@ elif page == "⭐ CS3: Org-AI-R Results":
 elif page == "🚀 Score Company (CS3)":
     st.markdown('<p class="main-header">🚀 Score Company - CS3</p>', unsafe_allow_html=True)
     st.caption("Run the complete Org-AI-R scoring pipeline")
-    
+
+    tab_score, tab_onboard = st.tabs(["📊 Score Existing Company", "🆕 Onboard New Company"])
+
+    with tab_onboard:
+        st.markdown("### Onboard Any New Company")
+        st.caption("Automatically collect SEC filings, signals, score and index into ChromaDB for any US-listed company")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            new_ticker = st.text_input("Enter Ticker", placeholder="e.g. AMZN, TSLA, GOOGL").upper()
+        with col2:
+            new_sector = st.selectbox("Sector", [
+                "Technology", "Financial Services", "Healthcare",
+                "Retail", "Industrials", "Consumer", "Energy", "Other"
+            ])
+
+        st.info("⏱️ Onboarding takes 3-5 minutes. Steps: Register → SEC filings → Signals → Scoring → ChromaDB indexing")
+
+        if st.button("🚀 Onboard Company", type="primary", use_container_width=True, disabled=not new_ticker):
+            if not new_ticker:
+                st.warning("Please enter a ticker!")
+            else:
+                import requests, time
+                with st.spinner(f"Starting onboarding for {new_ticker}..."):
+                    try:
+                        resp = requests.post(
+                            f"http://localhost:8000/api/v1/pipeline/onboard/{new_ticker}",
+                            params={"sector": new_sector},
+                            timeout=30
+                        )
+                        resp.raise_for_status()
+                        data = resp.json()
+
+                        if data.get("status") == "already_onboarded":
+                            st.success(f"✅ {new_ticker} is already onboarded and ready!")
+                            st.info(data.get("message", ""))
+                        else:
+                            st.success(f"✅ Onboarding started for {new_ticker}!")
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            steps_box = st.empty()
+
+                            for i in range(60):
+                                time.sleep(5)
+                                status_resp = requests.get(
+                                    f"http://localhost:8000/api/v1/pipeline/onboard/{new_ticker}/status",
+                                    timeout=10
+                                )
+                                if status_resp.status_code == 200:
+                                    s = status_resp.json()
+                                    completed = len(s.get("steps_completed", []))
+                                    total = completed + len(s.get("steps_remaining", []))
+                                    progress = int((completed / max(total, 1)) * 100)
+                                    progress_bar.progress(progress)
+                                    status_text.text(f"⏳ {s.get('message', 'Processing...')}")
+                                    completed_steps = s.get("steps_completed", [])
+                                    steps_box.write({"Done": completed_steps, "Remaining": s.get("steps_remaining", [])})
+
+                                    if s.get("status") == "completed":
+                                        progress_bar.progress(100)
+                                        status_text.empty()
+                                        st.success(f"🎉 {new_ticker} onboarded successfully!")
+                                        col1, col2, col3 = st.columns(3)
+                                        with col1:
+                                            st.metric("Org-AI-R Score", f"{s.get('final_score', 0):.1f}")
+                                        with col2:
+                                            st.metric("Evidence Indexed", s.get("evidence_count", 0))
+                                        with col3:
+                                            st.metric("Status", "✅ Ready")
+                                        st.info(f"You can now search and justify {new_ticker} in Evidence Search and Score Justification pages!")
+                                        st.balloons()
+                                        break
+                                    elif s.get("status") == "failed":
+                                        st.error(f"❌ Onboarding failed: {s.get('error', 'Unknown error')}")
+                                        break
+                            else:
+                                st.error("⏱️ Onboarding timed out. Check the API logs.")
+
+                    except Exception as e:
+                        st.error(f"❌ Error: {e}")
+
+    with tab_score:
+        st.caption("Score a company that is already registered in the system")
     try:
         companies_list = api.list_companies(limit=100)
         
@@ -1889,6 +1971,12 @@ elif page == "🔍 Evidence Search":
     st.markdown('<p class="main-header">🔍 Evidence Search</p>', unsafe_allow_html=True)
     st.caption("Search across SEC filings, job postings, patents and board signals using AI-powered hybrid search")
 
+
+    # Company selector OUTSIDE form so radio works dynamically
+    known_tickers_s = sorted([c['ticker'] for c in api.list_companies(limit=100) if c.get('ticker')])
+    company_filter = st.selectbox("Company", ["All"] + known_tickers_s, key="s_co_select")
+
+
     # Search form
     with st.form("search_form"):
         query = st.text_input(
@@ -1899,10 +1987,14 @@ elif page == "🔍 Evidence Search":
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
+
             company_filter = st.selectbox(
                 "Company",
                 ["All", "NVDA", "JPM", "WMT", "GE", "DG"]
             )
+
+            st.caption(f"Searching: {company_filter}")
+
 
         with col2:
             dimension_filter = st.selectbox(
@@ -2057,11 +2149,10 @@ elif page == "📝 Score Justification":
         col1, col2 = st.columns(2)
 
         with col1:
-            ticker = st.selectbox(
-                "Company Ticker",
-                ["NVDA", "JPM", "WMT", "GE", "DG"],
-                key="just_ticker"
-            )
+
+            known_tickers_j = sorted([c['ticker'] for c in api.list_companies(limit=100) if c.get('ticker')])
+            ticker = st.selectbox("Company Ticker", known_tickers_j, key="j_ticker_select")
+
 
         with col2:
             dimension = st.selectbox(
@@ -2173,11 +2264,10 @@ elif page == "📝 Score Justification":
         col1, col2 = st.columns(2)
 
         with col1:
-            ic_ticker = st.selectbox(
-                "Company Ticker",
-                ["NVDA", "JPM", "WMT", "GE", "DG"],
-                key="ic_ticker"
-            )
+
+            known_tickers_ic = sorted([c['ticker'] for c in api.list_companies(limit=100) if c.get('ticker')])
+            ic_ticker = st.selectbox("Company Ticker", known_tickers_ic, key="ic_ticker_select")
+
 
         with col2:
             focus = st.multiselect(
