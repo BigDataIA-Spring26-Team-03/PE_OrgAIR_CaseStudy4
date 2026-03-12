@@ -25,6 +25,7 @@ services:
 
     volumes:
       - chroma_data:/data/chroma
+      - ./results:/app/results
 
     depends_on:
       - redis
@@ -86,6 +87,7 @@ services:
 
   airflow-webserver:
     image: apache/airflow:2.10.4-python3.10
+    user: "50000:0"    
     # Use _PIP_ADDITIONAL_REQUIREMENTS (built-in Airflow image feature)
     # and plain command string — no custom entrypoint
     command: webserver
@@ -128,6 +130,7 @@ services:
 
   airflow-scheduler:
     image: apache/airflow:2.10.4-python3.10
+    user: "50000:0"    
     command: scheduler
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
