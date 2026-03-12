@@ -26,7 +26,7 @@ from src.services.integration.cs2_client import (
 )
 
 BASE_URL = "http://localhost:8000"
-COMPANIES = ["NVDA", "JPM", "WMT", "GE", "DG"]
+COMPANIES = sys.argv[1:] if len(sys.argv) > 1 else ["NVDA", "JPM", "WMT", "GE", "DG"]
 
 def raw_to_cs2evidence(raw: dict) -> CS2Evidence | None:
     try:
