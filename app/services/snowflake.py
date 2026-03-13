@@ -15,44 +15,60 @@ class SnowflakeService:
     def __init__(self):
         self.connection = None
 
+    def _conn_params(self):
+        """Connection parameters with keep-alive to avoid token expiry."""
+        return {
+            "account": settings.SNOWFLAKE_ACCOUNT,
+            "user": settings.SNOWFLAKE_USER,
+            "password": settings.SNOWFLAKE_PASSWORD,
+            "database": settings.SNOWFLAKE_DATABASE,
+            "schema": settings.SNOWFLAKE_SCHEMA,
+            "warehouse": settings.SNOWFLAKE_WAREHOUSE,
+            "client_session_keep_alive": True,  # Prevents 390114 token expiry
+        }
+
     def connect(self):
         """Establish connection to Snowflake"""
         if not self.connection:
-            self.connection = snowflake.connector.connect(
-                account=settings.SNOWFLAKE_ACCOUNT,
-                user=settings.SNOWFLAKE_USER,
-                password=settings.SNOWFLAKE_PASSWORD,
-                database=settings.SNOWFLAKE_DATABASE,
-                schema=settings.SNOWFLAKE_SCHEMA,
-                warehouse=settings.SNOWFLAKE_WAREHOUSE,
-                role="ACCOUNTADMIN",
-            )
+            self.connection = snowflake.connector.connect(**self._conn_params())
         return self.connection
 
     def close(self):
         """Close Snowflake connection"""
         if self.connection:
-            self.connection.close()
+            try:
+                self.connection.close()
+            except Exception:
+                pass
             self.connection = None
+
+    def _new_connection(self):
+        """Fresh connection per request - avoids stale auth tokens (390114)."""
+        conn = snowflake.connector.connect(**self._conn_params())
+        return conn
 
     def _lowercase_keys(self, data: List[Dict]) -> List[Dict]:
         """Convert dictionary keys to lowercase for Pydantic compatibility"""
         return [{k.lower(): v for k, v in row.items()} for row in data]
 
     def execute_query(self, query: str, params: Optional[Dict] = None) -> List[Dict]:
-        """Execute SELECT query and return results with lowercase keys"""
-        conn = self.connect()
-        cursor = conn.cursor(snowflake.connector.DictCursor)
+        """Execute SELECT - uses fresh connection to avoid 390114 token expiry."""
+        conn = self._new_connection()
         try:
+            cursor = conn.cursor(snowflake.connector.DictCursor)
             cursor.execute(query, params or {})
-            results = cursor.fetchall()
-            return self._lowercase_keys(results)
-        finally:
+            results = self._lowercase_keys(cursor.fetchall())
             cursor.close()
+            return results
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     def execute_update(self, query: str, params: Optional[Dict] = None) -> int:
-        """Execute INSERT/UPDATE/DELETE and return rows affected"""
-        conn = self.connect()
+        """Execute INSERT/UPDATE/DELETE - uses fresh connection to avoid 390114."""
+        conn = self._new_connection()
         cursor = conn.cursor()
         try:
             cursor.execute(query, params or {})
@@ -60,6 +76,10 @@ class SnowflakeService:
             return cursor.rowcount
         finally:
             cursor.close()
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     async def check_health(self) -> str:
         """Check if Snowflake is accessible"""
@@ -91,6 +111,24 @@ class SnowflakeService:
         rows = list(signals)
         if not rows:
             return 0
+
+        # Look up ticker for each company_id
+        company_ids = list({str(s.company_id) for s in rows})
+        ticker_map = {}
+        if company_ids:
+            placeholders = ",".join(["%s"] * len(company_ids))
+            q = f"SELECT id, ticker FROM companies WHERE id IN ({placeholders})"
+            conn0 = self._new_connection()
+            try:
+                cur = conn0.cursor()
+                cur.execute(q, company_ids)
+                for r in cur.fetchall():
+                    ticker_map[str(r[0])] = (r[1] or "").strip().upper()
+            finally:
+                try:
+                    conn0.close()
+                except Exception:
+                    pass
 
         def map_category(cat: str) -> str:
             c = (cat or "").lower()
@@ -139,7 +177,7 @@ class SnowflakeService:
             """
             return s.replace("'", "''")
 
-        conn = self.connect()
+        conn = self._new_connection()
         cursor = conn.cursor()
         inserted = 0
 
@@ -155,9 +193,11 @@ class SnowflakeService:
 
                 # Inline JSON literal so PARSE_JSON definitely returns VARIANT
                 meta_dollar = meta_json.replace("$$", "$ $")
+                ticker_val = ticker_map.get(str(s.company_id), "")
+
                 query = f"""
                     INSERT INTO external_signals
-                        (id, company_id, category, source, signal_date, raw_value, normalized_score, confidence, metadata)
+                        (id, company_id, category, source, signal_date, raw_value, normalized_score, confidence, metadata, ticker)
                     SELECT
                         %(id)s,
                         %(company_id)s,
@@ -167,12 +207,14 @@ class SnowflakeService:
                         %(raw_value)s,
                         %(normalized_score)s,
                         %(confidence)s,
-                        PARSE_JSON($${meta_dollar}$$)
+                        PARSE_JSON($${meta_dollar}$$),
+                        NULLIF(%(ticker)s, '')
                 """
 
                 params = {
                     "id": sid,
                     "company_id": str(s.company_id),
+                    "ticker": ticker_val,
                     "category": map_category(category),
                     "source": source,
                     "signal_date": s.signal_date.date() if hasattr(s.signal_date, "date") else s.signal_date,
@@ -192,6 +234,10 @@ class SnowflakeService:
             raise
         finally:
             cursor.close()
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     def upsert_company_signal_summary(self, summary: CompanySignalSummary, signal_count: int = 0) -> None:
         """
@@ -299,6 +345,39 @@ class SnowflakeService:
         """
         rows = self.execute_query(query, {"company_id": company_id})
         return rows[0]["domain_url"] if rows else None
+
+    TICKER_DOMAIN_FALLBACK = {
+        "NVDA": "nvidia.com", "JPM": "jpmorganchase.com", "WMT": "walmart.com",
+        "GE": "ge.com", "DG": "dollargeneral.com", "TSLA": "tesla.com",
+        "MSFT": "microsoft.com", "AAPL": "apple.com", "GOOGL": "google.com",
+    }
+
+    def get_domain_for_company(self, company_id: str, ticker: str) -> Optional[str]:
+        """Get domain: company_domains → fallback map → yfinance."""
+        domain = self.get_primary_domain_by_company_id(company_id)
+        if domain:
+            return self._normalize_domain(domain)
+        t = (ticker or "").strip().upper()
+        if t and t in self.TICKER_DOMAIN_FALLBACK:
+            return self.TICKER_DOMAIN_FALLBACK[t]
+        try:
+            import yfinance as yf
+            stock = yf.Ticker(t)
+            website = (stock.info or {}).get("website")
+            if website:
+                return self._normalize_domain(website)
+        except Exception:
+            pass
+        return None
+
+    def _normalize_domain(self, url_or_domain: str) -> str:
+        s = (url_or_domain or "").strip()
+        if not s:
+            return ""
+        for p in ("https://", "http://", "www."):
+            if s.lower().startswith(p):
+                s = s[len(p):]
+        return s.split("/")[0].lower() or ""
 
     def list_companies(self, limit: int = 10, offset: int = 0) -> List[Dict]:
         query = """

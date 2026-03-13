@@ -27,21 +27,50 @@ from app.services.snowflake import SnowflakeService
 
 logger = structlog.get_logger()
 
-# USPTO Name Mapping
-COMPANY_USPTO_NAMES = {
-    "WMT": "Walmart Apollo, LLC",
-    "JPM": "JPMORGAN CHASE BANK, N.A.",
-    "GS": "Goldman Sachs & Co. LLC",
-    "CAT": "Caterpillar Inc.",
-    "DE": "Deere & Company",
-    "UNH": "UnitedHealth Group Incorporated",
-    "HCA": "HCA Holdings, Inc.",
-    "ADP": "AUTOMATIC DATA PROCESSING, INC.",
-    "PAYX": "Paychex Time & Attendance, Inc.",
-    "NVDA":"NVIDIA Corporation",
-    "DG":"Dollar General",
-    "GE":"General Electric"
-}
+
+_SUFFIXES = frozenset({"corporation", "inc", "llc", "ltd", "co", "company", "incorporated"})
+
+
+def _search_term_for_assignee(name: str) -> str:
+    """
+    Derive patent assignee search term from company name.
+    - Strip corporate suffixes (Corporation, Inc., LLC, etc.)
+    - Use 1-2 words: Tesla, Dollar General, General Electric
+    """
+    s = (name or "").strip()
+    if not s:
+        return s
+    parts = s.split(",")[0].strip().split()
+    while parts and parts[-1].lower().rstrip(".") in _SUFFIXES:
+        parts.pop()
+    if not parts:
+        return s
+    if len(parts) == 1:
+        return parts[0]
+    return " ".join(parts[:2])
+
+
+def _resolve_assignee_name(ticker: str, company_name: str) -> str:
+    """
+    Resolve company name for patent assignee search.
+    When DB has name=ticker, fetch from yfinance. Then derive search term
+    (1-2 words, no suffix) to match assignee variants.
+    """
+    name = (company_name or "").strip()
+    t = (ticker or "").strip().upper()
+    if name and name.upper() != t:
+        resolved = name
+    elif t:
+        try:
+            import yfinance as yf
+            info = (yf.Ticker(t).info or {})
+            resolved = info.get("shortName") or info.get("longName") or name or t
+        except Exception:
+            resolved = name or t
+    else:
+        resolved = name or "Unknown"
+    search = _search_term_for_assignee(resolved)
+    return search if len(search) >= 2 else (resolved or "Unknown")
 
 
 class PatentSignalCollector:
@@ -136,9 +165,8 @@ class PatentSignalCollector:
             query = {
                 "q": {
                     "_and": [
-                        {
-                            "assignees.assignee_organization": company_name
-                        },
+                        # _contains = partial match - works for any company (no hardcoding)
+                        {"_contains": {"assignees.assignee_organization": company_name}},
                         {
                             "_begins": {
                                 "cpc_current.cpc_group_id": "G06N"
@@ -155,11 +183,13 @@ class PatentSignalCollector:
                     "patent_id",
                     "patent_title",
                     "patent_date",
-                    "patent_abstract"
+                    "patent_abstract",
+                    "assignees",
+                    "cpc_current"
                 ],
                 "s": [{"patent_id": "asc"}],  # Sort for consistent pagination
                 "o": {
-                    "per_page": 100
+                    "size": 100  # PatentSearch API uses 'size' (max 1000), not 'per_page'
                 }
             }
             
@@ -482,46 +512,33 @@ class PatentSignalPipeline:
         self.logger.info("Companies fetched", count=len(companies))
         return companies
     
-    def filter_companies_with_uspto_names(self, companies: List[Dict]) -> List[Dict]:
-        """Filter companies that have USPTO name mappings."""
-        filtered = []
-        
-        for company in companies:
-            ticker = company.get('ticker')
-            if ticker and ticker.upper() in COMPANY_USPTO_NAMES:
-                filtered.append(company)
-        
+    def filter_companies_with_names(self, companies: List[Dict]) -> List[Dict]:
+        """Filter companies that have a name (used for assignee _contains search)."""
+        filtered = [c for c in companies if c.get('name', '').strip()]
         self.logger.info(
-            "Filtered companies with USPTO mappings",
+            "Filtered companies with names",
             total=len(companies),
             filtered=len(filtered)
         )
         return filtered
     
     async def collect_signal_for_company(self, company: Dict) -> Optional[Dict]:
-        """Collect patent signal for a single company."""
-        ticker = company['ticker'].upper()
+        """Collect patent signal for a single company (resolves assignee name via yfinance when name=ticker)."""
+        ticker = (company.get('ticker') or '').strip().upper()
         company_id = company['id']
-        company_name = company['name']
-        
-        # Get USPTO name
-        uspto_name = COMPANY_USPTO_NAMES.get(ticker)
-        if not uspto_name:
-            self.logger.warning("No USPTO name mapping", ticker=ticker)
-            return None
+        company_name = (company.get('name') or '').strip()
+        assignee_name = _resolve_assignee_name(ticker, company_name)
         
         self.logger.info(
             "Processing company",
             ticker=ticker,
-            company_name=company_name,
-            uspto_name=uspto_name
+            assignee_name=assignee_name
         )
         
         try:
-            # Collect patent signal
             signal = await self.collector.collect_signals(
                 company_id=company_id,
-                company_name=uspto_name,
+                company_name=assignee_name,
                 years=self.years
             )
             
@@ -688,7 +705,7 @@ class PatentSignalPipeline:
         
         # Fetch companies
         all_companies = self.get_companies_from_snowflake()
-        target_companies = self.filter_companies_with_uspto_names(all_companies)
+        target_companies = self.filter_companies_with_names(all_companies)
         
         # Apply ticker filter if provided
         if ticker_filter:
@@ -792,19 +809,20 @@ def aggregate_patent_signals(company_id: str, patent_signals: List[ExternalSigna
 async def collect_patent_signals_real(
     company_id: str,
     company_name: str,
-    uspto_name: str,
-    years: int = 5
+    years: int = 5,
+    ticker: Optional[str] = None,
 ) -> List[ExternalSignal]:
     """
     REAL patent collection - Returns ExternalSignal objects.
-    This is the main function for unified collection.
+    Uses _contains match on assignee name (resolves via yfinance when DB has name=ticker).
     """
     collector = PatentSignalCollector()
+    assignee_name = _resolve_assignee_name(ticker or "", company_name)
     
-    # Get patent data
+    # Get patent data (assignee_name used for _contains search)
     patent_data = await collector.collect_signals(
         company_id=company_id,
-        company_name=uspto_name,
+        company_name=assignee_name,
         years=years
     )
     
@@ -812,7 +830,7 @@ async def collect_patent_signals_real(
     signal = ExternalSignal(
         id=patent_data['id'],
         company_id=company_id,
-        category=SignalCategory.patents,
+        category=SignalCategory.INNOVATION_ACTIVITY,
         source=SignalSource.external,
         signal_date=patent_data['signal_date'],
         score=int(patent_data['normalized_score']),
