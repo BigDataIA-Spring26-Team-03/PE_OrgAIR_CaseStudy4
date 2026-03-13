@@ -19,7 +19,7 @@ from app.pipelines.document_chunker_s3 import normalize_ws
 logger = logging.getLogger(__name__)
 
 
-# SEC EDGAR CIK numbers for target companies
+# SEC EDGAR CIK numbers for known companies (fast-path cache)
 COMPANY_CIKS: Dict[str, str] = {
     "NVDA": "1045810",
     "JPM": "19617",
@@ -27,6 +27,33 @@ COMPANY_CIKS: Dict[str, str] = {
     "GE": "40545",
     "DG": "29534",
 }
+
+# Runtime CIK cache populated via SEC EDGAR company_tickers.json
+_CIK_CACHE: Dict[str, str] = {}
+
+
+def lookup_cik(ticker: str) -> Optional[str]:
+    """Return the SEC EDGAR CIK for any ticker, resolving dynamically if needed."""
+    ticker = ticker.upper()
+    if ticker in COMPANY_CIKS:
+        return COMPANY_CIKS[ticker]
+    if ticker in _CIK_CACHE:
+        return _CIK_CACHE[ticker]
+    try:
+        resp = requests.get(
+            "https://www.sec.gov/files/company_tickers.json",
+            headers=EDGAR_HEADERS,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        for entry in resp.json().values():
+            if entry.get("ticker", "").upper() == ticker:
+                cik = str(entry["cik_str"]).zfill(10)
+                _CIK_CACHE[ticker] = cik
+                return cik
+    except Exception as exc:
+        logger.warning(f"CIK lookup failed for {ticker}: {exc}")
+    return None
 
 # Polite EDGAR headers (required by SEC fair-access policy)
 EDGAR_HEADERS = {
@@ -139,9 +166,9 @@ class BoardCompositionCollector:
 
     def _fetch_latest_proxy(self, ticker: str) -> Optional[str]:
         """Fetch the most recent DEF 14A filing HTML from EDGAR."""
-        cik = COMPANY_CIKS.get(ticker)
+        cik = lookup_cik(ticker)
         if not cik:
-            logger.warning(f"No CIK mapping for ticker {ticker}")
+            logger.warning(f"No CIK found for ticker {ticker}")
             return None
 
         submissions_url = (

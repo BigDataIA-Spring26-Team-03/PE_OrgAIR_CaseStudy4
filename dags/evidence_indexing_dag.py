@@ -17,7 +17,8 @@ from airflow.decorators import dag, task
 CS2_BASE_URL = os.environ.get("CS2_BASE_URL", "http://localhost:8000")
 CHROMA_PERSIST_DIR = os.environ.get("CHROMA_PERSIST_DIR", "/data/chroma")
 
-COMPANIES = ["NVDA", "JPM", "WMT", "GE", "DG"]
+# Deprecated: tickers now loaded dynamically from Snowflake inside fetch_evidence task
+_FALLBACK_COMPANIES = ["NVDA", "JPM", "WMT", "GE", "DG"]
 
 
 @dag(
@@ -47,10 +48,22 @@ def evidence_indexing_pipeline():
 
         log = logging.getLogger(__name__)
 
+        # Load tickers dynamically from Snowflake
+        try:
+            from app.services.snowflake import db
+            rows = db.execute_query(
+                "SELECT ticker FROM companies WHERE is_deleted = FALSE AND ticker IS NOT NULL"
+            )
+            tickers = [r["ticker"] for r in rows]
+            log.info("Loaded %d tickers from Snowflake", len(tickers))
+        except Exception as exc:
+            log.warning("Snowflake ticker load failed (%s), using fallback", exc)
+            tickers = _FALLBACK_COMPANIES
+
         async def _fetch():
             all_evidence = []
             async with CS2Client(base_url=CS2_BASE_URL) as cs2:
-                for ticker in COMPANIES:
+                for ticker in tickers:
                     try:
                         items = await cs2.get_evidence(
                             company_id=ticker,

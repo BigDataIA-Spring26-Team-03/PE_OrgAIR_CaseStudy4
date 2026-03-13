@@ -53,8 +53,13 @@ _SOURCE_TO_CATEGORY: Dict[SourceType, SignalCategory] = {
     SourceType.PRESS_RELEASE:           SignalCategory.INNOVATION_ACTIVITY,
     SourceType.GLASSDOOR_REVIEW:        SignalCategory.CULTURE_SIGNALS,
     SourceType.BOARD_PROXY_DEF14A:      SignalCategory.GOVERNANCE_SIGNALS,
-    SourceType.ANALYST_INTERVIEW:       SignalCategory.LEADERSHIP_SIGNALS,
-    SourceType.DD_DATA_ROOM:            SignalCategory.DIGITAL_PRESENCE,
+}
+
+# CS4 analyst note source types are not in the CS2 SourceType enum.
+# They are stored as raw strings in ChromaDB metadata.
+_CS4_SOURCE_TO_CATEGORY: Dict[str, SignalCategory] = {
+    "analyst_interview": SignalCategory.LEADERSHIP_SIGNALS,
+    "dd_data_room":      SignalCategory.DIGITAL_PRESENCE,
 }
 
 
@@ -111,10 +116,12 @@ class DimensionMapper:
         return sorted(weights.items(), key=lambda x: x[1], reverse=True)
 
     def source_type_to_category(
-        self, source_type: SourceType
+        self, source_type: SourceType | str
     ) -> SignalCategory | None:
         """
-        Resolve a CS2 SourceType to its SignalCategory.
+        Resolve a SourceType (or raw string for CS4 analyst notes) to its SignalCategory.
         Returns None for source types with no defined mapping.
         """
-        return _SOURCE_TO_CATEGORY.get(source_type)
+        if isinstance(source_type, str):
+            return _CS4_SOURCE_TO_CATEGORY.get(source_type) or _SOURCE_TO_CATEGORY.get(source_type)  # type: ignore[arg-type]
+        return _SOURCE_TO_CATEGORY.get(source_type) or _CS4_SOURCE_TO_CATEGORY.get(source_type.value)
