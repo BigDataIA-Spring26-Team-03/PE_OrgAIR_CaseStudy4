@@ -75,7 +75,7 @@ class BoardCompositionAnalyzer:
         strategy_text: str = "",
     ) -> GovernanceSignal:
         signal = GovernanceSignal(company_id=company_id, ticker=ticker)
-        score = Decimal("10")
+        score = Decimal("20")
         strategy_lower = strategy_text.lower()
 
         # 1. Tech / digital committee  (+15)
@@ -139,7 +139,7 @@ class BoardCompositionAnalyzer:
         if "artificial intelligence" in strategy_lower or "machine learning" in strategy_lower:
             signal.has_ai_strategy = True
             signal.evidence.append("AI mentioned in strategy")
-            score += Decimal("5")
+            score += Decimal("10")
 
         # Cap & confidence
         signal.governance_score = clamp(score, Decimal("0"), Decimal("100"))
