@@ -271,3 +271,236 @@ def leadership_profiles_to_aggregated_signal(
         url=None,
         metadata_json=json.dumps(meta, default=str),
     )
+
+# ===========================================================================
+# WIKIDATA + WIKIPEDIA ENRICHMENT
+# Dynamic leadership collection for any public company
+# ===========================================================================
+
+import requests as _requests
+import logging as _logging
+
+_logger = _logging.getLogger(__name__)
+
+_WIKI_HEADERS = {"User-Agent": "PE-OrgAIR research@example.com"}
+
+_WIKI_AI_INDICATOR_MAP = {
+    "chief ai officer": AIBackgroundType.CHIEF_AI_OFFICER,
+    "chief artificial intelligence": AIBackgroundType.CHIEF_AI_OFFICER,
+    "openai": AIBackgroundType.AI_COMPANY_VETERAN,
+    "deepmind": AIBackgroundType.AI_COMPANY_VETERAN,
+    "google brain": AIBackgroundType.AI_COMPANY_VETERAN,
+    "anthropic": AIBackgroundType.AI_COMPANY_VETERAN,
+    "phd": AIBackgroundType.PHD_AI_ML,
+    "computer science": AIBackgroundType.PHD_AI_ML,
+    "research scientist": AIBackgroundType.PHD_AI_ML,
+    "machine learning": AIBackgroundType.AI_KEYWORDS_ONLY,
+    "artificial intelligence": AIBackgroundType.AI_KEYWORDS_ONLY,
+    "deep learning": AIBackgroundType.AI_KEYWORDS_ONLY,
+    "neural network": AIBackgroundType.AI_KEYWORDS_ONLY,
+    "data science": AIBackgroundType.AI_KEYWORDS_ONLY,
+    "cloud computing": AIBackgroundType.AI_KEYWORDS_ONLY,
+    "software engineer": AIBackgroundType.AI_KEYWORDS_ONLY,
+    "technology": AIBackgroundType.AI_KEYWORDS_ONLY,
+    "engineer": AIBackgroundType.AI_KEYWORDS_ONLY,
+    "cloud": AIBackgroundType.AI_KEYWORDS_ONLY,
+    "data": AIBackgroundType.AI_KEYWORDS_ONLY,
+}
+
+_WIKIDATA_ROLE_MAP = {
+    "P169": "CEO",
+    "P488": "Chairperson",
+    "P3320": "Board Member",
+    "P1037": "Director",
+}
+
+
+def _get_wikipedia_text(name: str) -> str:
+    """Get full Wikipedia article text for an executive."""
+    try:
+        resp = _requests.get(
+            "https://en.wikipedia.org/w/api.php",
+            params={
+                "action": "query",
+                "titles": name,
+                "prop": "extracts",
+                "explaintext": True,
+                "format": "json"
+            },
+            headers=_WIKI_HEADERS,
+            timeout=10
+        )
+        pages = resp.json().get("query", {}).get("pages", {})
+        for page in pages.values():
+            return page.get("extract", "").lower()
+    except Exception as e:
+        _logger.debug(f"Wikipedia fetch failed for {name}: {e}")
+    return ""
+
+
+def _detect_ai_indicators(wiki_text: str) -> List[AIBackgroundType]:
+    """Detect AI background indicators from Wikipedia text."""
+    found = set()
+    for keyword, indicator in _WIKI_AI_INDICATOR_MAP.items():
+        if keyword in wiki_text:
+            found.add(indicator)
+    return list(found)
+
+
+def _get_wikidata_company_id(company_name: str) -> Optional[str]:
+    """Find Wikidata entity ID for a company."""
+    try:
+        resp = _requests.get(
+            "https://www.wikidata.org/w/api.php",
+            params={
+                "action": "wbsearchentities",
+                "search": company_name,
+                "language": "en",
+                "type": "item",
+                "format": "json",
+                "limit": 1
+            },
+            headers=_WIKI_HEADERS,
+            timeout=10
+        )
+        results = resp.json().get("search", [])
+        return results[0]["id"] if results else None
+    except Exception as e:
+        _logger.warning(f"Wikidata search failed for {company_name}: {e}")
+        return None
+
+
+def _get_wikidata_executives(wikidata_id: str, company_name: str) -> List[dict]:
+    """Get current executives from Wikidata for a company."""
+    executives = []
+    for prop, role in _WIKIDATA_ROLE_MAP.items():
+        try:
+            resp = _requests.get(
+                "https://www.wikidata.org/w/api.php",
+                params={
+                    "action": "wbgetclaims",
+                    "entity": wikidata_id,
+                    "property": prop,
+                    "format": "json"
+                },
+                headers=_WIKI_HEADERS,
+                timeout=10
+            )
+            claims = resp.json().get("claims", {}).get(prop, [])
+            for c in claims:
+                # Skip former executives (with end time P582)
+                if "P582" in c.get("qualifiers", {}):
+                    continue
+                val = c.get("mainsnak", {}).get("datavalue", {}).get("value", {})
+                entity_id = val.get("id") if isinstance(val, dict) else None
+                if not entity_id:
+                    continue
+                # Get executive name
+                resp2 = _requests.get(
+                    "https://www.wikidata.org/w/api.php",
+                    params={
+                        "action": "wbgetentities",
+                        "ids": entity_id,
+                        "props": "labels",
+                        "language": "en",
+                        "format": "json"
+                    },
+                    headers=_WIKI_HEADERS,
+                    timeout=10
+                )
+                entity = resp2.json().get("entities", {}).get(entity_id, {})
+                name = entity.get("labels", {}).get("en", {}).get("value", "")
+                if name:
+                    executives.append({"name": name, "role": role, "company": company_name})
+        except Exception as e:
+            _logger.debug(f"Wikidata {prop} fetch failed: {e}")
+    return executives
+
+
+def _resolve_company_name(company_name: str) -> str:
+    """Resolve ticker-style names to full company names via SEC EDGAR."""
+    # If name looks like a ticker (short, all caps), look up real name
+    if len(company_name) <= 5 and company_name.upper() == company_name:
+        try:
+            resp = _requests.get(
+                "https://www.sec.gov/files/company_tickers.json",
+                headers=_WIKI_HEADERS, timeout=10
+            )
+            if resp.status_code == 200:
+                for entry in resp.json().values():
+                    if str(entry.get("ticker", "")).upper() == company_name.upper():
+                        full_name = entry.get("title", "")
+                        if full_name:
+                            # Clean SEC format: "AMAZON COM INC" -> "Amazon"
+                            import re as _re
+                            clean = full_name.title()
+                            # Remove trailing legal suffixes
+                            clean = _re.sub(r'\b(Inc|Corp|Co|Ltd|Llc|Com|Holdings|Group|Corporation|Limited|Incorporated)\b\.?', '', clean)
+                            # Remove extra whitespace
+                            clean = ' '.join(clean.split())
+                            # Take first meaningful word(s) - max 2 words
+                            words = clean.split()
+                            clean = ' '.join(words[:2]) if len(words) > 2 else clean
+                            clean = clean.strip()
+                            _logger.info(f"Resolved {company_name} -> {clean}")
+                            return clean
+        except Exception:
+            pass
+    return company_name
+
+
+def collect_leadership_profiles_from_web(
+    company_name: str,
+    company_id: str,
+) -> List[LeadershipProfile]:
+    """
+    Collect LeadershipProfile objects for any public company using:
+    1. Wikidata — current C-suite and board members
+    2. Wikipedia — AI background detection from article text
+
+    Works for any publicly listed company. Falls back gracefully.
+    """
+    # Resolve ticker-style names to full company names
+    company_name = _resolve_company_name(company_name)
+    _logger.info(f"Collecting web leadership profiles for {company_name}")
+
+    wikidata_id = _get_wikidata_company_id(company_name)
+    if not wikidata_id:
+        _logger.warning(f"No Wikidata ID found for {company_name}")
+        return []
+
+    raw_executives = _get_wikidata_executives(wikidata_id, company_name)
+    _logger.info(f"Wikidata: found {len(raw_executives)} executives for {company_name}")
+
+    profiles = []
+    seen_names = set()
+
+    for exec_data in raw_executives:
+        name = exec_data["name"]
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+
+        # Get Wikipedia text for AI background detection
+        wiki_text = _get_wikipedia_text(name)
+        ai_indicators = _detect_ai_indicators(wiki_text)
+
+        # Default to AI_KEYWORDS_ONLY if tech executive with no specific indicators
+        if not ai_indicators and wiki_text and any(
+            kw in wiki_text for kw in ["microsoft", "amazon", "google", "apple", "meta", "tech"]
+        ):
+            ai_indicators = [AIBackgroundType.AI_KEYWORDS_ONLY]
+
+        profiles.append(
+            LeadershipProfile(
+                name=name,
+                title=exec_data["role"],
+                company=company_name,
+                ai_indicators=ai_indicators,
+                url=f"https://en.wikipedia.org/wiki/{name.replace(' ', '_')}",
+                observed_date=datetime.utcnow().strftime("%Y-%m-%d"),
+            )
+        )
+
+    _logger.info(f"Web leadership: {len(profiles)} profiles collected for {company_name}")
+    return profiles
