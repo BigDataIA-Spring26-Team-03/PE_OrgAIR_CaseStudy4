@@ -46,6 +46,8 @@ Key capabilities:
 - HyDE query enhancement for better retrieval
 - Score justification generation with cited evidence
 - IC Meeting Prep package generation across all 7 dimensions
+- Analyst Notes Collector for post-LOI due diligence evidence
+- On-demand company onboarding for any US-listed ticker
 - Dynamic leadership signals via Wikidata + Wikipedia enrichment
 
 ---
@@ -73,8 +75,13 @@ Key capabilities:
              |                              | src/services/retrieval/        |
              |                              |   hybrid.py (Dense+BM25+RRF)   |
              |                              |   hyde.py (query enhancement)  |
+             |                              |   dimension_mapper.py          |
              |                              | src/services/justification/    |
              |                              |   generator.py                 |
+             |                              | src/services/workflows/        |
+             |                              |   ic_prep.py                   |
+             |                              | src/services/collection/       |
+             |                              |   analyst_notes.py             |
              |                              | src/services/integration/      |
              |                              |   cs1_client.py                |
              |                              |   cs2_client.py                |
@@ -122,6 +129,7 @@ Connects CS4 to all upstream case studies.
 **CS1 Client** — fetches company metadata (ticker, sector, market cap)
 **CS2 Client** — loads evidence chunks with source type, confidence, dimension
 **CS3 Client** — retrieves dimension scores, rubric criteria, level keywords
+**Dimension Mapper** — maps evidence sources to the 7 Org-AI-R dimensions
 
 ---
 
@@ -137,6 +145,7 @@ Fallback: GPT-4 (OpenAI)
 Supports:
 - Score justification generation
 - IC meeting prep synthesis
+- Analyst note summarization
 - Evidence quality assessment
 
 ---
@@ -202,16 +211,54 @@ Generates a complete Investment Committee package:
 
 ---
 
-### 8️⃣ Dynamic Signal Collection 
+### 7️⃣ Analyst Notes Collector
+
+Indexes post-LOI due diligence evidence directly from PE analysts.
+
+Supported note types:
+- **Interview transcripts** — CTO, CDO, CFO conversations (confidence = 1.0)
+- **Management meeting notes** — executive sessions (confidence = 1.0)
+- **Site visit observations** — on-the-ground findings (confidence = 1.0)
+- **DD findings** — due diligence investigation results (confidence = 1.0)
+- **Data room summaries** — document repository analysis (confidence = 0.9)
+
+Each note is tagged with:
+- Dimensions discussed (maps to 7 Org-AI-R dimensions)
+- Key findings and risk flags
+- Assessor identity (audit trail)
+
+Analyst notes are indexed into ChromaDB alongside SEC filings and signals, making them searchable and citable in justifications. Primary source confidence (1.0) means they rank highest in evidence retrieval.
+
+---
+
+### 8️⃣ On-Demand Company Onboarding
+
+`POST /api/v1/pipeline/onboard/{ticker}`
+
+Automatically onboards any US-listed company in 5 steps:
+
+1. Register in Snowflake (dynamic industry mapping)
+2. Collect SEC 10-K filings via EDGAR
+3. Collect signals (jobs, patents, board governance, leadership)
+4. Run CS3 scoring pipeline
+5. Index evidence into ChromaDB
+
+Works for **any** US-listed ticker — not just the original 5.
+
+Tested: MSFT (351 items, 64.0), AMZN (391 items, 61.4), JNJ (127 items, 56.1), AAPL (227 items, 67.0)
+
+---
+
+### 9️⃣ Dynamic Signal Collection
 
 **Board Governance** — dynamic CIK lookup via SEC official ticker map for any company
 
-**Patent Signals** — dynamic USPTO name resolution via SEC EDGAR + USPTO assignee API
+**Patent Signals** — dynamic USPTO name resolution via SEC EDGAR + USPTO assignee API. Uses `_text_phrase` search instead of exact match.
 
 **Leadership Signals** — 3-source enrichment:
 - SEC DEF 14A proxy statements (board governance)
 - Wikidata — current C-suite and board members for any public company
-- Wikipedia — AI background detection from executive articles
+- Wikipedia — AI background detection from executive articles (detects PHD, AI company veteran, ML keywords)
 
 ---
 
@@ -236,6 +283,13 @@ GET /api/v1/justification/{ticker}/{dimension}
 ```
 POST /api/v1/justification/{ticker}/ic-prep
 Body: { "focus_dimensions": ["data_infrastructure", "talent"] }
+```
+
+### On-Demand Onboarding
+```
+POST /api/v1/pipeline/onboard/{ticker}?sector=Technology
+GET  /api/v1/pipeline/onboard/{ticker}/status
+GET  /api/v1/pipeline/supported-sectors
 ```
 
 ---
@@ -276,20 +330,28 @@ PE_ORGAIR_CASESTUDY4/
 │   ├── routers/
 │   │   ├── search.py             # Evidence search endpoint
 │   │   ├── justification.py      # Score justification endpoint
-│   │   ├── pipeline.py           # On-demand onboarding (NEW)
+│   │   ├── pipeline.py           # On-demand onboarding
 │   │   └── signals.py            # Signal collection
 │   └── services/
 │
 ├── src/
 │   ├── services/
 │   │   ├── integration/          # CS1/CS2/CS3 clients
+│   │   │   ├── cs1_client.py
+│   │   │   ├── cs2_client.py
+│   │   │   └── cs3_client.py
 │   │   ├── retrieval/
 │   │   │   ├── hybrid.py         # Dense + BM25 + RRF fusion
-│   │   │   └── hyde.py           # HyDE query enhancement
+│   │   │   ├── hyde.py           # HyDE query enhancement
+│   │   │   └── dimension_mapper.py
 │   │   ├── search/
 │   │   │   └── vector_store.py   # ChromaDB wrapper
-│   │   └── justification/
-│   │       └── generator.py      # Score justification LLM
+│   │   ├── justification/
+│   │   │   └── generator.py      # Score justification LLM
+│   │   ├── workflows/
+│   │   │   └── ic_prep.py        # IC meeting prep
+│   │   └── collection/
+│   │       └── analyst_notes.py  # Post-LOI due diligence notes
 │
 ├── dags/
 │   └── evidence_indexing_dag.py  # Airflow batch indexing
@@ -391,10 +453,11 @@ Airflow available at:
 
 ## 🧪 Testing & Validation
 
-- 81 unit and integration tests passing
+- 81 unit and integration tests passing (1 skipped intentional)
 - All 3 CS4 endpoints verified (Search, Justification, IC Prep)
 - All 5 original tickers × 7 dimensions = 35 combinations tested
-- New companies tested: MSFT, AMZN, JNJ, AAPL
+- New companies tested: MSFT (351 items), AMZN (391 items), JNJ (127 items), AAPL (227 items)
+- Evidence indexed: NVDA (435), JPM (1,756), WMT (317), GE (369), DG (797)
 
 ---
 
@@ -417,11 +480,10 @@ Airflow available at:
 - Streamlit CS4 pages (Evidence Search, Score Justification, Analyst notes)
 
 ### Vaishnavi Srinivas
-- On-demand company onboarding pipeline 
+- On-demand company onboarding pipeline
 - Dynamic CIK lookup for board governance
 - Dynamic USPTO name resolution for patents
 - Wikidata + Wikipedia leadership enrichment
-
 
 ---
 
