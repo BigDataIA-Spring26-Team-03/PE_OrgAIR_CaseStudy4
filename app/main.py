@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.config import settings
@@ -14,6 +16,15 @@ from app.routers.search import router as search_router
 from app.routers.justification import router as justification_router
 from app.routers.evidence import router as evidence_router
 from app.routers.analyst_notes import router as analyst_notes_router
+from app.core.deps import get_retriever
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Eagerly init the shared retriever so BM25 is reloaded from ChromaDB
+    # before the first request arrives.
+    get_retriever()
+    yield
 
 
 def create_app() -> FastAPI:
@@ -21,6 +32,7 @@ def create_app() -> FastAPI:
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
         debug=settings.DEBUG,
+        lifespan=lifespan,
     )
 
     app.include_router(health_router)

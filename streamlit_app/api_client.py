@@ -279,13 +279,16 @@ class APIClient:
 
     def search_evidence(self, query: str, company_id: str = None,
                     dimension: str = None, top_k: int = 10,
-                    min_confidence: float = 0.0) -> list:
+                    min_confidence: float = 0.0,
+                    source_types: list = None) -> list:
         """Search evidence using hybrid search."""
         params = {"query": query, "top_k": top_k, "min_confidence": min_confidence}
         if company_id:
             params["company_id"] = company_id
         if dimension:
             params["dimension"] = dimension
+        if source_types:
+            params["source_types"] = source_types
         response = requests.get(f"{self.base_url}/api/v1/search", params=params)
         return self._handle_response(response).json()
 
@@ -312,6 +315,14 @@ class APIClient:
     # ========================================
     # ANALYST NOTES (CS4)
     # ========================================
+    def seed_evidence(self, ticker: str) -> Dict:
+        """Fetch evidence for a ticker from Snowflake and index into the search retriever."""
+        response = requests.post(
+            f"{self.base_url}/api/v1/search/seed/{ticker}",
+            timeout=120
+        )
+        return self._handle_response(response).json()
+
     def submit_interview(self, ticker: str, payload: Dict) -> Dict:
         response = requests.post(
             f"{self.base_url}/api/v1/analyst-notes/{ticker}/interview",

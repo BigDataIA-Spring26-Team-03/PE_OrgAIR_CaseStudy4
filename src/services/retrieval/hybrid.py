@@ -65,6 +65,28 @@ class HybridRetriever:
         self._doc_ids: List[str] = []        # doc_id matching each corpus entry
         self._metadata: List[Dict] = []      # metadata matching each corpus entry
 
+        # Re-hydrate BM25 from any documents already persisted in ChromaDB
+        self._reload_from_chroma()
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _reload_from_chroma(self) -> None:
+        """Rebuild BM25 from any documents already persisted in ChromaDB."""
+        try:
+            all_docs = self.vector_store.collection.get(include=["documents", "metadatas"])
+            if not all_docs["ids"]:
+                return
+            self._corpus   = all_docs["documents"]
+            self._doc_ids  = all_docs["ids"]
+            self._metadata = all_docs["metadatas"]
+            tokenized = [re.sub(r'[^\w\s]', ' ', doc.lower()).split() for doc in self._corpus]
+            self._bm25 = BM25Okapi(tokenized)
+            logger.info("bm25_reloaded_from_chroma", extra={"count": len(self._doc_ids)})
+        except Exception as exc:
+            logger.warning("bm25_reload_skipped", extra={"error": str(exc)})
+
     # ------------------------------------------------------------------
     # Indexing
     # ------------------------------------------------------------------
