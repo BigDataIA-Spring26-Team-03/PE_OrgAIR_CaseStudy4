@@ -43,6 +43,7 @@ def list_industries():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # ========================================
 # POST /api/v1/companies (CREATE)
 # ========================================
@@ -50,6 +51,17 @@ def list_industries():
 def create_company(payload: CompanyCreate) -> CompanyResponse:
     """Create a new company in Snowflake; warm cache for GET-by-id."""
     try:
+        # Duplicate ticker check — prevent two companies with same ticker
+        existing = db.execute_query(
+            "SELECT id FROM companies WHERE UPPER(ticker) = %(ticker)s AND is_deleted = FALSE LIMIT 1",
+            {"ticker": payload.ticker.upper()},
+        )
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Company with ticker '{payload.ticker.upper()}' already exists.",
+            )
+
         industry = db.get_industry(str(payload.industry_id))
         if not industry:
             raise HTTPException(status_code=404, detail="Industry not found")
@@ -60,7 +72,6 @@ def create_company(payload: CompanyCreate) -> CompanyResponse:
             raise HTTPException(status_code=500, detail="Failed to create company")
 
         response = CompanyResponse(**company_data)
-
 
         cache_key = f"{COMPANY_CACHE_PREFIX}{response.id}"
         cache.set(cache_key, response, ttl_seconds=COMPANY_TTL_SECONDS)
@@ -126,6 +137,19 @@ def update_company(company_id: UUID, payload: CompanyCreate) -> CompanyResponse:
         if not existing:
             raise HTTPException(status_code=404, detail="Company not found")
 
+        # If ticker is being changed, check the new ticker isn't already taken
+        existing_ticker = (existing.get("TICKER") or existing.get("ticker", "")).upper()
+        if payload.ticker.upper() != existing_ticker:
+            ticker_conflict = db.execute_query(
+                "SELECT id FROM companies WHERE UPPER(ticker) = %(ticker)s AND is_deleted = FALSE AND id != %(id)s LIMIT 1",
+                {"ticker": payload.ticker.upper(), "id": str(company_id)},
+            )
+            if ticker_conflict:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Company with ticker '{payload.ticker.upper()}' already exists.",
+                )
+
         industry = db.get_industry(str(payload.industry_id))
         if not industry:
             raise HTTPException(status_code=404, detail="Industry not found")
@@ -140,7 +164,6 @@ def update_company(company_id: UUID, payload: CompanyCreate) -> CompanyResponse:
 
         response = CompanyResponse(**updated)
 
-        # Invalidate + Refresh
         cache_key = f"{COMPANY_CACHE_PREFIX}{company_id}"
         cache.delete(cache_key)
         cache.set(cache_key, response, ttl_seconds=COMPANY_TTL_SECONDS)
