@@ -21,7 +21,7 @@ from app.services.snowflake import SnowflakeService
 # Import all collectors
 from app.pipelines.job_signals import scrape_job_postings, job_postings_to_signals
 from app.pipelines.tech_signals import scrape_tech_signal_inputs, tech_inputs_to_signals
-from app.pipelines.patent_signals import collect_patent_signals_real, COMPANY_USPTO_NAMES
+from app.pipelines.patent_signals import collect_patent_signals_real
 from app.pipelines.external_signals_orchestrator import build_company_signal_summary
 
 logger = structlog.get_logger()
@@ -166,8 +166,7 @@ async def collect_all_companies(
     background_tasks.add_task(run_batch_collection_task, years=years)
     return {
         "status": "accepted",
-        "message": "Batch collection started",
-        "companies": list(COMPANY_USPTO_NAMES.keys()),
+        "message": "Batch collection started for all companies in DB",
         "note": "Check /api/v1/signals/summary for progress",
     }
 
@@ -545,12 +544,12 @@ async def run_comprehensive_collection_task(
             logger.exception("Job collection failed", error=str(e))
 
         # ========================================
-        # 2. TECH STACK
+        # 2. TECH STACK (company_domains, fallback map, or yfinance)
         # ========================================
         try:
-            domain = db.get_primary_domain_by_company_id(company_id)
+            domain = db.get_domain_for_company(company_id=company_id, ticker=ticker)
             if domain:
-                tech_inputs = scrape_tech_signal_inputs(company=company_name, company_domain_or_url=domain)
+                tech_inputs = scrape_tech_signal_inputs(company=ticker, company_domain_or_url=domain)
                 tech_signals = tech_inputs_to_signals(company_id, tech_inputs)
                 all_signals.extend(tech_signals)
                 logger.info("✅ Tech stack collected", count=len(tech_signals))
@@ -560,21 +559,20 @@ async def run_comprehensive_collection_task(
             logger.exception("Tech collection failed", error=str(e))
 
         # ========================================
-        # 3. PATENTS
+        # 3. PATENTS (dynamic: _contains match on company_name, no hardcoding)
         # ========================================
         try:
-            uspto_name = COMPANY_USPTO_NAMES.get(ticker)
-            if uspto_name:
+            if company_name:
                 patent_signals = await collect_patent_signals_real(
                     company_id=company_id,
                     company_name=company_name,
-                    uspto_name=uspto_name,
                     years=years,
+                    ticker=ticker,
                 )
                 all_signals.extend(patent_signals)
                 logger.info("✅ Patents collected", count=len(patent_signals), score=(patent_signals[0].score if patent_signals else 0))
             else:
-                logger.warning("⚠️ No USPTO name mapping", ticker=ticker)
+                logger.warning("⚠️ No company name for patent search", ticker=ticker)
         except Exception as e:
             logger.exception("Patent collection failed", error=str(e))
 
@@ -634,16 +632,15 @@ async def run_patent_only_task(company_id: str, company_name: str, ticker: str, 
     try:
         db = SnowflakeService()
 
-        uspto_name = COMPANY_USPTO_NAMES.get(ticker)
-        if not uspto_name:
-            logger.error("No USPTO mapping", ticker=ticker)
+        if not (company_name or "").strip():
+            logger.error("No company name for patent search", ticker=ticker)
             return
 
         patent_signals = await collect_patent_signals_real(
             company_id=company_id,
-            company_name=company_name,
-            uspto_name=uspto_name,
+            company_name=company_name.strip(),
             years=years,
+            ticker=ticker,
         )
 
         inserted_count = 0
@@ -739,22 +736,27 @@ async def run_jobs_only_task(company_id: str, company_name: str, ticker: str, jo
 
 async def run_batch_collection_task(years: int):
     try:
-        for ticker in COMPANY_USPTO_NAMES.keys():
+        db = SnowflakeService()
+        companies = db.execute_query(
+            """
+            SELECT id, name, ticker
+            FROM companies
+            WHERE is_deleted = FALSE
+            ORDER BY ticker
+            """,
+        )
+        db.close()
+
+        for company in (companies or []):
+            company_id = company["id"]
+            company_name = company.get("name", "")
+            ticker = company.get("ticker", "")
             db = SnowflakeService()
             try:
-                companies = db.execute_query(
-                    """
-                    SELECT id, name
-                    FROM companies
-                    WHERE ticker = %(ticker)s AND is_deleted = FALSE
-                    """,
-                    {"ticker": ticker},
-                )
-
-                if companies:
+                if company_id and company_name:
                     await run_comprehensive_collection_task(
-                        company_id=companies[0]["id"],
-                        company_name=companies[0]["name"],
+                        company_id=company_id,
+                        company_name=company_name,
                         ticker=ticker,
                         years=years,
                         job_location="United States",

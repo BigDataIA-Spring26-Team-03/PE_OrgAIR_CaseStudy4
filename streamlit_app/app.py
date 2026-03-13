@@ -110,16 +110,27 @@ if page == "🏠 Dashboard":
     st.markdown('<p class="main-header">📊 Platform Dashboard</p>', unsafe_allow_html=True)
     
     try:
-        # Get data
-        companies = api.list_companies(limit=100)
-        assessments = api.list_assessments(limit=100)
-        
+        # Get data - each call wrapped so one failure doesn't break the whole dashboard
+        try:
+            companies = api.list_companies(limit=100)
+        except Exception as e:
+            st.warning(f"Could not load companies: {e}")
+            companies = []
+
+        try:
+            assessments = api.list_assessments(limit=100)
+        except Exception as e:
+            st.warning(f"Could not load assessments: {e}")
+            assessments = []
+
         # Try to get CS2 signals
         try:
             signals_data = api.get_all_signal_summaries()
             signals_available = True
-        except:
+        except Exception as e:
+            st.warning(f"Could not load signal summaries: {e}")
             signals_available = False
+            signals_data = {"count": 0, "summaries": []}
         
         # Top metrics
         col1, col2, col3, col4 = st.columns(4)
