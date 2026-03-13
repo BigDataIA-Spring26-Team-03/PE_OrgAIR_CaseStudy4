@@ -308,3 +308,41 @@ class APIClient:
             timeout=300
         )
         return self._handle_response(response).json()
+
+    # ========================================
+    # ANALYST NOTES (CS4)
+    # ========================================
+    def submit_interview(self, ticker: str, payload: Dict) -> Dict:
+        response = requests.post(
+            f"{self.base_url}/api/v1/analyst-notes/{ticker}/interview",
+            json=payload, timeout=30
+        )
+        return self._handle_response(response).json()
+
+    def submit_dd_finding(self, ticker: str, payload: Dict) -> Dict:
+        response = requests.post(
+            f"{self.base_url}/api/v1/analyst-notes/{ticker}/dd-finding",
+            json=payload, timeout=30
+        )
+        return self._handle_response(response).json()
+
+    def submit_data_room(self, ticker: str, payload: Dict) -> Dict:
+        response = requests.post(
+            f"{self.base_url}/api/v1/analyst-notes/{ticker}/data-room",
+            json=payload, timeout=30
+        )
+        return self._handle_response(response).json()
+
+    def submit_management_meeting(self, ticker: str, payload: Dict) -> Dict:
+        response = requests.post(
+            f"{self.base_url}/api/v1/analyst-notes/{ticker}/management-meeting",
+            json=payload, timeout=30
+        )
+        return self._handle_response(response).json()
+
+    def submit_site_visit(self, ticker: str, payload: Dict) -> Dict:
+        response = requests.post(
+            f"{self.base_url}/api/v1/analyst-notes/{ticker}/site-visit",
+            json=payload, timeout=30
+        )
+        return self._handle_response(response).json()
