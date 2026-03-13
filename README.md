@@ -19,7 +19,7 @@
 | Component | Link |
 |-----------|------|
 | Demo Video | TBD |
-| Interactive Codelab | https://codelabs-preview.appspot.com/?file_id=1vbScSJyPROzPjuzx6h-lVBne2yIizObxuDUvmVDJmBI#12 |
+| Interactive Codelab | [CS4 RAG & Search Codelab](https://codelabs-preview.appspot.com/?file_id=1vbScSJyPROzPjuzx6h-lVBne2yIizObxuDUvmVDJmBI#12) |
 
 ---
 
@@ -46,6 +46,7 @@ Key capabilities:
 - HyDE query enhancement for better retrieval
 - Score justification generation with cited evidence
 - IC Meeting Prep package generation across all 7 dimensions
+- Analyst Notes Collector for post-LOI due diligence evidence
 - On-demand company onboarding for any US-listed ticker
 - Dynamic leadership signals via Wikidata + Wikipedia enrichment
 
@@ -74,8 +75,13 @@ Key capabilities:
              |                              | src/services/retrieval/        |
              |                              |   hybrid.py (Dense+BM25+RRF)   |
              |                              |   hyde.py (query enhancement)  |
+             |                              |   dimension_mapper.py          |
              |                              | src/services/justification/    |
              |                              |   generator.py                 |
+             |                              | src/services/workflows/        |
+             |                              |   ic_prep.py                   |
+             |                              | src/services/collection/       |
+             |                              |   analyst_notes.py             |
              |                              | src/services/integration/      |
              |                              |   cs1_client.py                |
              |                              |   cs2_client.py                |
@@ -123,6 +129,7 @@ Connects CS4 to all upstream case studies.
 **CS1 Client** — fetches company metadata (ticker, sector, market cap)
 **CS2 Client** — loads evidence chunks with source type, confidence, dimension
 **CS3 Client** — retrieves dimension scores, rubric criteria, level keywords
+**Dimension Mapper** — maps evidence sources to the 7 Org-AI-R dimensions
 
 ---
 
@@ -138,6 +145,7 @@ Fallback: GPT-4 (OpenAI)
 Supports:
 - Score justification generation
 - IC meeting prep synthesis
+- Analyst note summarization
 - Evidence quality assessment
 
 ---
@@ -203,7 +211,29 @@ Generates a complete Investment Committee package:
 
 ---
 
-### 7️⃣ On-Demand Company Onboarding (NEW)
+### 7️⃣ Analyst Notes Collector
+
+Indexes post-LOI due diligence evidence directly from PE analysts.
+
+Supported note types:
+- **Interview transcripts** — CTO, CDO, CFO conversations
+- **Management meeting notes** — executive sessions
+- **Site visit observations** — on-the-ground findings
+- **DD findings** — due diligence investigation results
+- **Data room summaries** — document repository analysis
+
+Each note is tagged with:
+- Dimensions discussed
+- Key findings
+- Risk flags
+- Assessor identity
+- Confidence level (primary source = 1.0)
+
+Analyst notes are indexed into ChromaDB and become searchable evidence alongside SEC filings and signals.
+
+---
+
+### 8️⃣ On-Demand Company Onboarding (NEW)
 
 `POST /api/v1/pipeline/onboard/{ticker}`
 
@@ -219,7 +249,7 @@ Works for **any** US-listed ticker — not just the original 5.
 
 ---
 
-### 8️⃣ Dynamic Signal Collection (NEW)
+### 9️⃣ Dynamic Signal Collection (NEW)
 
 **Board Governance** — dynamic CIK lookup via SEC official ticker map for any company
 
@@ -307,13 +337,21 @@ PE_ORGAIR_CASESTUDY4/
 ├── src/
 │   ├── services/
 │   │   ├── integration/          # CS1/CS2/CS3 clients
+│   │   │   ├── cs1_client.py
+│   │   │   ├── cs2_client.py
+│   │   │   └── cs3_client.py
 │   │   ├── retrieval/
 │   │   │   ├── hybrid.py         # Dense + BM25 + RRF fusion
-│   │   │   └── hyde.py           # HyDE query enhancement
+│   │   │   ├── hyde.py           # HyDE query enhancement
+│   │   │   └── dimension_mapper.py
 │   │   ├── search/
 │   │   │   └── vector_store.py   # ChromaDB wrapper
-│   │   └── justification/
-│   │       └── generator.py      # Score justification LLM
+│   │   ├── justification/
+│   │   │   └── generator.py      # Score justification LLM
+│   │   ├── workflows/
+│   │   │   └── ic_prep.py        # IC meeting prep
+│   │   └── collection/
+│   │       └── analyst_notes.py  # Post-LOI due diligence notes
 │
 ├── dags/
 │   └── evidence_indexing_dag.py  # Airflow batch indexing
@@ -415,10 +453,11 @@ Airflow available at:
 
 ## 🧪 Testing & Validation
 
-- 81 unit and integration tests passing
+- 81 unit and integration tests passing (1 skipped intentional)
 - All 3 CS4 endpoints verified (Search, Justification, IC Prep)
 - All 5 original tickers × 7 dimensions = 35 combinations tested
-- New companies tested: MSFT, AMZN, JNJ, AAPL
+- New companies tested: MSFT (351 items), AMZN (391 items), JNJ (127 items), AAPL (227 items)
+- Evidence indexed: NVDA (435), JPM (1,756), WMT (317), GE (369), DG (797)
 
 ---
 
