@@ -18,7 +18,7 @@
 
 | Component | Link |
 |-----------|------|
-| Demo Video | TBD |
+| Demo Video | [Demo Video](https://youtu.be/ZU32gMl1m3g) |
 | Interactive Codelab | [CS4 RAG & Search Codelab](https://codelabs-preview.appspot.com/?file_id=1vbScSJyPROzPjuzx6h-lVBne2yIizObxuDUvmVDJmBI#12) |
 
 ---
