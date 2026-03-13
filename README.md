@@ -19,7 +19,7 @@
 | Component | Link |
 |-----------|------|
 | Demo Video | TBD |
-| Interactive Codelab | TBD |
+| Interactive Codelab | https://codelabs-preview.appspot.com/?file_id=1vbScSJyPROzPjuzx6h-lVBne2yIizObxuDUvmVDJmBI#12 |
 
 ---
 
@@ -441,12 +441,11 @@ Airflow available at:
 - Airflow evidence indexing DAG
 
 ### Vaishnavi Srinivas
-- On-demand company onboarding pipeline (`pipeline.py`)
-- Dynamic CIK lookup for board governance (any company)
-- Dynamic USPTO name resolution for patents (any company)
-- Wikidata + Wikipedia leadership enrichment (any company)
-- Streamlit "Onboard New Company" tab + dynamic dropdowns
-- Dynamic evidence indexing (`scripts/index_evidence.py`)
+- On-demand company onboarding pipeline 
+- Dynamic CIK lookup for board governance
+- Dynamic USPTO name resolution for patents
+- Wikidata + Wikipedia leadership enrichment
+
 
 ---
 
