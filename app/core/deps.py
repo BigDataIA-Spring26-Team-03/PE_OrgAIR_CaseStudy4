@@ -1,4 +1,5 @@
 # app/core/deps.py
+import os
 from functools import lru_cache
 
 from app.services.redis_cache import RedisCache
@@ -13,3 +14,19 @@ def get_cache() -> RedisCache:
 
 # simple global for routers to import
 cache = get_cache()
+
+
+# ---------------------------------------------------------------------------
+# Shared HybridRetriever — single instance across all routers
+# ---------------------------------------------------------------------------
+
+from src.services.retrieval.hybrid import HybridRetriever  # noqa: E402
+
+
+@lru_cache
+def get_retriever() -> HybridRetriever:
+    return HybridRetriever(persist_dir=os.getenv("CHROMA_PERSIST_DIR", "./chroma_data"))
+
+
+# simple global for routers to import (same pattern as cache above)
+retriever = get_retriever()

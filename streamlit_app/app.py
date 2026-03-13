@@ -1901,6 +1901,42 @@ elif page == "🔍 Evidence Search":
     st.markdown('<p class="main-header">🔍 Evidence Search</p>', unsafe_allow_html=True)
     st.caption("Search across SEC filings, job postings, patents and board signals using AI-powered hybrid search")
 
+    # ------------------------------------------------------------------
+    # Step 1: Seed Evidence
+    # ------------------------------------------------------------------
+    st.markdown("### Step 1: Seed Evidence")
+    st.caption("Index a company's evidence from Snowflake into the search engine before searching.")
+
+    seed_col1, seed_col2 = st.columns([2, 1])
+    with seed_col1:
+        seed_ticker = st.selectbox(
+            "Select Company to Seed",
+            ["NVDA", "JPM", "WMT", "GE", "DG"],
+            key="seed_ticker"
+        )
+    with seed_col2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        seed_btn = st.button("🌱 Seed Evidence", type="primary", use_container_width=True)
+
+    if seed_btn:
+        with st.spinner(f"Fetching and indexing evidence for {seed_ticker}..."):
+            try:
+                result = api.seed_evidence(seed_ticker)
+                indexed = result.get("indexed", 0)
+                if indexed > 0:
+                    st.success(f"✅ Indexed **{indexed}** documents for **{seed_ticker}**. You can now search below.")
+                    st.session_state["seeded_ticker"] = seed_ticker
+                else:
+                    st.warning(f"⚠️ {result.get('message', 'No evidence found in Snowflake for ' + seed_ticker)}")
+            except Exception as e:
+                st.error(f"Seeding failed: {e}")
+
+    if "seeded_ticker" in st.session_state:
+        st.info(f"ℹ️ Last seeded: **{st.session_state['seeded_ticker']}** — ready to search.")
+
+    st.markdown("---")
+    st.markdown("### Step 2: Search")
+
     # Search form
     with st.form("search_form"):
         query = st.text_input(
@@ -1937,6 +1973,16 @@ elif page == "🔍 Evidence Search":
         with col4:
             min_conf = st.slider("Min Confidence", 0.0, 1.0, 0.0, 0.1)
 
+        source_types_filter = st.multiselect(
+            "📂 Source Types (leave empty for all)",
+            options=[
+                "sec_10k_item_1", "sec_10k_item_1a", "sec_10k_item_7",
+                "job_posting_linkedin", "job_posting_indeed", "patent_uspto",
+                "glassdoor_review", "board_proxy_def14a", "analyst_interview", "dd_data_room"
+            ],
+            help="Filter results by evidence source type",
+        )
+
         search_btn = st.form_submit_button("🔍 Search", use_container_width=True, type="primary")
 
     # Run search
@@ -1952,6 +1998,7 @@ elif page == "🔍 Evidence Search":
                         dimension=dimension_filter if dimension_filter != "All" else None,
                         top_k=top_k,
                         min_confidence=min_conf,
+                        source_types=source_types_filter if source_types_filter else None,
                     )
 
                     if not results:

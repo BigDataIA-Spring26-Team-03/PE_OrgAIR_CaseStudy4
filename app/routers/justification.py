@@ -13,6 +13,7 @@ from app.models.justification import (
 from src.services.justification.generator import JustificationGenerator, ScoreJustification
 from src.services.workflows.ic_prep import ICPrepWorkflow, ICMeetingPackage
 from src.services.integration.cs3_client import Dimension
+from app.core.deps import retriever
 
 router = APIRouter(prefix="/justification", tags=["Justification"])
 
@@ -28,7 +29,7 @@ _ic_workflow: Optional[ICPrepWorkflow] = None
 def get_generator() -> JustificationGenerator:
     global _generator
     if _generator is None:
-        _generator = JustificationGenerator()
+        _generator = JustificationGenerator(retriever=retriever)
     return _generator
 
 

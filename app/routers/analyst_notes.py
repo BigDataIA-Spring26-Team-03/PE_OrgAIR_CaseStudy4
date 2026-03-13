@@ -10,7 +10,7 @@ from src.services.collection.analyst_notes import (
     DDSeverity,
     NoteType,
 )
-from src.services.retrieval.hybrid import HybridRetriever
+from app.core.deps import retriever
 from src.services.integration.cs3_client import Dimension
 
 router = APIRouter(prefix="/analyst-notes", tags=["Analyst Notes"])
@@ -28,7 +28,7 @@ _collector: Optional[AnalystNotesCollector] = None
 def get_collector() -> AnalystNotesCollector:
     global _collector
     if _collector is None:
-        _collector = AnalystNotesCollector(retriever=HybridRetriever())
+        _collector = AnalystNotesCollector(retriever=retriever)
     return _collector
 
 
