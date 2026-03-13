@@ -46,7 +46,6 @@ Key capabilities:
 - HyDE query enhancement for better retrieval
 - Score justification generation with cited evidence
 - IC Meeting Prep package generation across all 7 dimensions
-- On-demand company onboarding for any US-listed ticker
 - Dynamic leadership signals via Wikidata + Wikipedia enrichment
 
 ---
@@ -203,23 +202,7 @@ Generates a complete Investment Committee package:
 
 ---
 
-### 7️⃣ On-Demand Company Onboarding (NEW)
-
-`POST /api/v1/pipeline/onboard/{ticker}`
-
-Automatically onboards any US-listed company in 5 steps:
-
-1. Register in Snowflake (dynamic industry mapping)
-2. Collect SEC 10-K filings via EDGAR
-3. Collect signals (jobs, patents, board governance, leadership)
-4. Run CS3 scoring pipeline
-5. Index evidence into ChromaDB
-
-Works for **any** US-listed ticker — not just the original 5.
-
----
-
-### 8️⃣ Dynamic Signal Collection (NEW)
+### 8️⃣ Dynamic Signal Collection 
 
 **Board Governance** — dynamic CIK lookup via SEC official ticker map for any company
 
@@ -253,13 +236,6 @@ GET /api/v1/justification/{ticker}/{dimension}
 ```
 POST /api/v1/justification/{ticker}/ic-prep
 Body: { "focus_dimensions": ["data_infrastructure", "talent"] }
-```
-
-### On-Demand Onboarding
-```
-POST /api/v1/pipeline/onboard/{ticker}?sector=Technology
-GET  /api/v1/pipeline/onboard/{ticker}/status
-GET  /api/v1/pipeline/supported-sectors
 ```
 
 ---
@@ -430,7 +406,7 @@ Airflow available at:
 - HyDE query enhancement
 - Vector store (ChromaDB)
 - Evidence indexing pipeline
-- Streamlit CS4 pages (Evidence Search, Score Justification)
+- Airflow evidence indexing DAG
 
 ### Ishaan Samel
 - Score Justification Generator
@@ -438,7 +414,7 @@ Airflow available at:
 - Analyst Notes Collector
 - LiteLLM multi-provider router
 - Justification API endpoint
-- Airflow evidence indexing DAG
+- Streamlit CS4 pages (Evidence Search, Score Justification, Analyst notes)
 
 ### Vaishnavi Srinivas
 - On-demand company onboarding pipeline 
