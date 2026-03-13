@@ -95,7 +95,8 @@ page = st.sidebar.radio(
         "⭐ CS3: Org-AI-R Results",
         "🔧 System Health",
         "🔍 Evidence Search",
-        "📝 Score Justification"
+        "📝 Score Justification",
+        "🗒️ Analyst Notes"
     ]
 )
 st.sidebar.markdown("---")
@@ -2281,6 +2282,306 @@ elif page == "📝 Score Justification":
                 except Exception as e:
                     st.error(f"IC prep failed: {e}")
                     st.info("This can fail if any dimension has no evidence. Try selecting fewer dimensions.")
+
+# ============================================
+# 🗒️ ANALYST NOTES (CS4)
+# ============================================
+elif page == "🗒️ Analyst Notes":
+    st.markdown('<p class="main-header">🗒️ Analyst Notes</p>', unsafe_allow_html=True)
+    st.caption("Submit primary-source due diligence evidence — indexed into ChromaDB with confidence=1.0")
+
+    DIMENSIONS = [
+        "data_infrastructure",
+        "ai_governance",
+        "technology_stack",
+        "talent",
+        "leadership",
+        "use_case_portfolio",
+        "culture",
+    ]
+    TICKERS = ["NVDA", "JPM", "WMT", "GE", "DG"]
+
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "🎤 Interview",
+        "🔍 DD Finding",
+        "📂 Data Room",
+        "🤝 Management Meeting",
+        "🏭 Site Visit",
+    ])
+
+    # ------------------------------------------------------------------
+    # TAB 1 — Interview Transcript
+    # ------------------------------------------------------------------
+    with tab1:
+        st.markdown("### Submit Interview Transcript")
+        st.caption("Index an interview with management, CTO, CDO, or other key stakeholders")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            iv_ticker = st.selectbox("Company Ticker", TICKERS, key="iv_ticker")
+            iv_interviewee = st.text_input("Interviewee Name", placeholder="e.g. Jensen Huang", key="iv_interviewee")
+            iv_title = st.text_input("Interviewee Title", placeholder="e.g. CEO", key="iv_title")
+        with col2:
+            iv_assessor = st.text_input("Assessor (your name/email)", placeholder="analyst@firm.com", key="iv_assessor")
+            iv_dims = st.multiselect(
+                "Dimensions Discussed",
+                DIMENSIONS,
+                format_func=lambda x: x.replace("_", " ").title(),
+                key="iv_dims"
+            )
+
+        iv_transcript = st.text_area(
+            "Interview Transcript / Notes (min 50 chars)",
+            height=200,
+            placeholder="Paste the full transcript or detailed notes here...",
+            key="iv_transcript"
+        )
+        iv_findings_raw = st.text_area("Key Findings (one per line, optional)", height=80, key="iv_findings")
+        iv_risks_raw = st.text_area("Risk Flags (one per line, optional)", height=80, key="iv_risks")
+
+        if st.button("🎤 Submit Interview", type="primary", use_container_width=True, key="iv_submit"):
+            if not iv_interviewee or not iv_title or not iv_assessor:
+                st.warning("Please fill in interviewee name, title, and assessor.")
+            elif len(iv_transcript) < 50:
+                st.warning("Transcript must be at least 50 characters.")
+            elif not iv_dims:
+                st.warning("Select at least one dimension.")
+            else:
+                with st.spinner("Indexing interview..."):
+                    try:
+                        result = api.submit_interview(iv_ticker, {
+                            "interviewee": iv_interviewee,
+                            "interviewee_title": iv_title,
+                            "transcript": iv_transcript,
+                            "assessor": iv_assessor,
+                            "dimensions_discussed": iv_dims,
+                            "key_findings": [f for f in iv_findings_raw.splitlines() if f.strip()],
+                            "risk_flags": [r for r in iv_risks_raw.splitlines() if r.strip()],
+                        })
+                        st.success(f"✅ {result['message']}")
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Note ID", result["note_id"])
+                        col2.metric("Type", result["note_type"])
+                        col3.metric("Primary Dimension", result["primary_dimension"].replace("_", " ").title())
+                    except Exception as e:
+                        st.error(f"Failed to submit interview: {e}")
+
+    # ------------------------------------------------------------------
+    # TAB 2 — DD Finding
+    # ------------------------------------------------------------------
+    with tab2:
+        st.markdown("### Submit Due Diligence Finding")
+        st.caption("Flag a specific risk or gap discovered during diligence")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            dd_ticker = st.selectbox("Company Ticker", TICKERS, key="dd_ticker")
+            dd_title = st.text_input("Finding Title", placeholder="e.g. No data quality monitoring", key="dd_title")
+            dd_assessor = st.text_input("Assessor", placeholder="analyst@firm.com", key="dd_assessor")
+        with col2:
+            dd_dimension = st.selectbox(
+                "Dimension",
+                DIMENSIONS,
+                format_func=lambda x: x.replace("_", " ").title(),
+                key="dd_dimension"
+            )
+            dd_severity = st.selectbox("Severity", ["critical", "moderate", "low"], key="dd_severity")
+
+        dd_finding = st.text_area(
+            "Finding Description (min 20 chars)",
+            height=180,
+            placeholder="Describe the finding in detail...",
+            key="dd_finding"
+        )
+        dd_findings_raw = st.text_area("Key Findings (one per line, optional)", height=80, key="dd_findings")
+        dd_risks_raw = st.text_area("Risk Flags (one per line, optional)", height=80, key="dd_risks")
+
+        if st.button("🔍 Submit DD Finding", type="primary", use_container_width=True, key="dd_submit"):
+            if not dd_title or not dd_assessor:
+                st.warning("Please fill in finding title and assessor.")
+            elif len(dd_finding) < 20:
+                st.warning("Finding description must be at least 20 characters.")
+            else:
+                with st.spinner("Indexing DD finding..."):
+                    try:
+                        result = api.submit_dd_finding(dd_ticker, {
+                            "title": dd_title,
+                            "finding": dd_finding,
+                            "dimension": dd_dimension,
+                            "severity": dd_severity,
+                            "assessor": dd_assessor,
+                            "key_findings": [f for f in dd_findings_raw.splitlines() if f.strip()],
+                            "risk_flags": [r for r in dd_risks_raw.splitlines() if r.strip()],
+                        })
+                        severity_emoji = {"critical": "🔴", "moderate": "🟠", "low": "🟡"}.get(dd_severity, "⚪")
+                        st.success(f"✅ {result['message']}")
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Note ID", result["note_id"])
+                        col2.metric("Severity", f"{severity_emoji} {dd_severity.title()}")
+                        col3.metric("Dimension", result["primary_dimension"].replace("_", " ").title())
+                    except Exception as e:
+                        st.error(f"Failed to submit DD finding: {e}")
+
+    # ------------------------------------------------------------------
+    # TAB 3 — Data Room
+    # ------------------------------------------------------------------
+    with tab3:
+        st.markdown("### Submit Data Room Document Summary")
+        st.caption("Summarize a document from the virtual data room")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            dr_ticker = st.selectbox("Company Ticker", TICKERS, key="dr_ticker")
+            dr_doc_name = st.text_input("Document Name", placeholder="e.g. AI_Roadmap_2025.pdf", key="dr_doc_name")
+            dr_assessor = st.text_input("Assessor", placeholder="analyst@firm.com", key="dr_assessor")
+        with col2:
+            dr_dimension = st.selectbox(
+                "Primary Dimension",
+                DIMENSIONS,
+                format_func=lambda x: x.replace("_", " ").title(),
+                key="dr_dimension"
+            )
+
+        dr_summary = st.text_area(
+            "Document Summary (min 50 chars)",
+            height=200,
+            placeholder="Summarise the key contents of this data room document...",
+            key="dr_summary"
+        )
+        dr_findings_raw = st.text_area("Key Findings (one per line, optional)", height=80, key="dr_findings")
+
+        if st.button("📂 Submit Data Room Summary", type="primary", use_container_width=True, key="dr_submit"):
+            if not dr_doc_name or not dr_assessor:
+                st.warning("Please fill in document name and assessor.")
+            elif len(dr_summary) < 50:
+                st.warning("Summary must be at least 50 characters.")
+            else:
+                with st.spinner("Indexing data room document..."):
+                    try:
+                        result = api.submit_data_room(dr_ticker, {
+                            "document_name": dr_doc_name,
+                            "summary": dr_summary,
+                            "dimension": dr_dimension,
+                            "assessor": dr_assessor,
+                            "key_findings": [f for f in dr_findings_raw.splitlines() if f.strip()],
+                        })
+                        st.success(f"✅ {result['message']}")
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Note ID", result["note_id"])
+                        col2.metric("Type", result["note_type"])
+                        col3.metric("Dimension", result["primary_dimension"].replace("_", " ").title())
+                    except Exception as e:
+                        st.error(f"Failed to submit data room summary: {e}")
+
+    # ------------------------------------------------------------------
+    # TAB 4 — Management Meeting
+    # ------------------------------------------------------------------
+    with tab4:
+        st.markdown("### Submit Management Meeting Notes")
+        st.caption("Index notes from a management meeting or roadshow")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            mm_ticker = st.selectbox("Company Ticker", TICKERS, key="mm_ticker")
+            mm_title = st.text_input("Meeting Title", placeholder="e.g. Q1 2026 Roadshow - NVDA", key="mm_title")
+            mm_assessor = st.text_input("Assessor", placeholder="analyst@firm.com", key="mm_assessor")
+        with col2:
+            mm_dims = st.multiselect(
+                "Dimensions Discussed",
+                DIMENSIONS,
+                format_func=lambda x: x.replace("_", " ").title(),
+                key="mm_dims"
+            )
+
+        mm_notes = st.text_area(
+            "Meeting Notes (min 50 chars)",
+            height=200,
+            placeholder="Enter full meeting notes...",
+            key="mm_notes"
+        )
+        mm_findings_raw = st.text_area("Key Findings (one per line, optional)", height=80, key="mm_findings")
+        mm_risks_raw = st.text_area("Risk Flags (one per line, optional)", height=80, key="mm_risks")
+
+        if st.button("🤝 Submit Meeting Notes", type="primary", use_container_width=True, key="mm_submit"):
+            if not mm_title or not mm_assessor:
+                st.warning("Please fill in meeting title and assessor.")
+            elif len(mm_notes) < 50:
+                st.warning("Notes must be at least 50 characters.")
+            elif not mm_dims:
+                st.warning("Select at least one dimension.")
+            else:
+                with st.spinner("Indexing meeting notes..."):
+                    try:
+                        result = api.submit_management_meeting(mm_ticker, {
+                            "meeting_title": mm_title,
+                            "notes": mm_notes,
+                            "assessor": mm_assessor,
+                            "dimensions_discussed": mm_dims,
+                            "key_findings": [f for f in mm_findings_raw.splitlines() if f.strip()],
+                            "risk_flags": [r for r in mm_risks_raw.splitlines() if r.strip()],
+                        })
+                        st.success(f"✅ {result['message']}")
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Note ID", result["note_id"])
+                        col2.metric("Type", result["note_type"])
+                        col3.metric("Primary Dimension", result["primary_dimension"].replace("_", " ").title())
+                    except Exception as e:
+                        st.error(f"Failed to submit meeting notes: {e}")
+
+    # ------------------------------------------------------------------
+    # TAB 5 — Site Visit
+    # ------------------------------------------------------------------
+    with tab5:
+        st.markdown("### Submit Site Visit Observations")
+        st.caption("Record observations from an on-site company visit")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            sv_ticker = st.selectbox("Company Ticker", TICKERS, key="sv_ticker")
+            sv_location = st.text_input("Location", placeholder="e.g. NVIDIA HQ, Santa Clara", key="sv_location")
+            sv_assessor = st.text_input("Assessor", placeholder="analyst@firm.com", key="sv_assessor")
+        with col2:
+            sv_dims = st.multiselect(
+                "Dimensions Observed",
+                DIMENSIONS,
+                format_func=lambda x: x.replace("_", " ").title(),
+                key="sv_dims"
+            )
+
+        sv_observations = st.text_area(
+            "Observations (min 50 chars)",
+            height=200,
+            placeholder="Describe what you observed during the site visit...",
+            key="sv_observations"
+        )
+        sv_findings_raw = st.text_area("Key Findings (one per line, optional)", height=80, key="sv_findings")
+        sv_risks_raw = st.text_area("Risk Flags (one per line, optional)", height=80, key="sv_risks")
+
+        if st.button("🏭 Submit Site Visit", type="primary", use_container_width=True, key="sv_submit"):
+            if not sv_location or not sv_assessor:
+                st.warning("Please fill in location and assessor.")
+            elif len(sv_observations) < 50:
+                st.warning("Observations must be at least 50 characters.")
+            elif not sv_dims:
+                st.warning("Select at least one dimension.")
+            else:
+                with st.spinner("Indexing site visit observations..."):
+                    try:
+                        result = api.submit_site_visit(sv_ticker, {
+                            "location": sv_location,
+                            "observations": sv_observations,
+                            "assessor": sv_assessor,
+                            "dimensions_discussed": sv_dims,
+                            "key_findings": [f for f in sv_findings_raw.splitlines() if f.strip()],
+                            "risk_flags": [r for r in sv_risks_raw.splitlines() if r.strip()],
+                        })
+                        st.success(f"✅ {result['message']}")
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Note ID", result["note_id"])
+                        col2.metric("Type", result["note_type"])
+                        col3.metric("Dimension", result["primary_dimension"].replace("_", " ").title())
+                    except Exception as e:
+                        st.error(f"Failed to submit site visit: {e}")
 
 # Footer
 st.sidebar.markdown("---")
