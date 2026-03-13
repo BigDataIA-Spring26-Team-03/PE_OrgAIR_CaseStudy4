@@ -34,10 +34,6 @@ class SourceType(str, enum.Enum):
     GLASSDOOR_REVIEW        = "glassdoor_review"
     BOARD_PROXY_DEF14A      = "board_proxy_def14a"
 
-    # New DD source types (CS4 analyst notes)
-    ANALYST_INTERVIEW   = "analyst_interview"
-    DD_DATA_ROOM        = "dd_data_room"
-
     @classmethod
     def from_raw(cls, raw: str) -> Optional["SourceType"]:
         if not raw:

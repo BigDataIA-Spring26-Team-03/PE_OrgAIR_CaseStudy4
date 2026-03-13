@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from src.services.retrieval.dimension_mapper import DimensionMapper
 
 import chromadb
 from chromadb.config import Settings

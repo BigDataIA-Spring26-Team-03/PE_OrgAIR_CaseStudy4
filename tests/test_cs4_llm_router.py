@@ -1,10 +1,16 @@
 # tests/test_cs4_llm_router.py
 
+import os
 from decimal import Decimal
 
 import pytest
 
 from src.services.llm.router import DailyBudget, ModelRouter, TaskType
+
+requires_llm_key = pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"),
+    reason="No LLM API key set (OPENAI_API_KEY or ANTHROPIC_API_KEY required)",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +98,7 @@ def test_estimate_cost_empty_message():
 # Real API call 
 # ---------------------------------------------------------------------------
 
+@requires_llm_key
 @pytest.mark.asyncio
 async def test_real_llm_completion_returns_text():
     """
@@ -108,6 +115,7 @@ async def test_real_llm_completion_returns_text():
     assert len(text.strip()) > 0
 
 
+@requires_llm_key
 @pytest.mark.asyncio
 async def test_real_llm_call_records_spend():
     """After a real call, spent_usd should be > 0."""

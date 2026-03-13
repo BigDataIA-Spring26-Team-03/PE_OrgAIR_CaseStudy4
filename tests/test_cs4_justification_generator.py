@@ -1,9 +1,16 @@
 # tests/test_cs4_justification_generator.py
 
 
+import os
+
 import pytest
 
 from src.services.integration.cs3_client import CS3Client, Dimension
+
+requires_live_services = pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"),
+    reason="No LLM API key — live integration tests skipped",
+)
 from src.services.justification.generator import (
     CitedEvidence,
     JustificationGenerator,
@@ -124,6 +131,7 @@ def test_match_to_rubric_high_score_included():
 # Requires: server running on port 8000, ticker with Snowflake data
 # ---------------------------------------------------------------------------
 
+@requires_live_services
 @pytest.mark.asyncio
 async def test_generate_justification_returns_score_justification(seeded_retriever, tmp_path):
     """
@@ -154,6 +162,7 @@ async def test_generate_justification_returns_score_justification(seeded_retriev
     assert isinstance(justification.gaps_identified, list)
 
 
+@requires_live_services
 @pytest.mark.asyncio
 async def test_generate_justification_summary_is_substantial(seeded_retriever):
     """LLM summary should be at least 50 words for IC use."""
@@ -169,6 +178,7 @@ async def test_generate_justification_summary_is_substantial(seeded_retriever):
     assert word_count >= 50, f"Summary too short: {word_count} words"
 
 
+@requires_live_services
 @pytest.mark.asyncio
 async def test_generate_justification_level5_has_no_gaps(seeded_retriever):
     """If a company scores Level 5, there should be no gaps."""

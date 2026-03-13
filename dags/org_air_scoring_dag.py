@@ -27,14 +27,28 @@ for path in ["/opt/airflow", "/opt/airflow/src", "/opt/airflow/app"]:
 from airflow.decorators import dag, task
 
 
-# 5 target companies with their sectors
-COMPANIES = [
+_FALLBACK_COMPANIES = [
     {"ticker": "NVDA", "sector": "Technology", "name": "NVIDIA Corporation"},
     {"ticker": "JPM", "sector": "Financial Services", "name": "JPMorgan Chase & Co."},
     {"ticker": "WMT", "sector": "Retail", "name": "Walmart Inc."},
     {"ticker": "GE", "sector": "Industrials", "name": "General Electric Company"},
     {"ticker": "DG", "sector": "Retail", "name": "Dollar General Corporation"},
 ]
+
+
+def _load_companies() -> list:
+    """Load all active companies from Snowflake at DAG parse time."""
+    try:
+        from app.services.snowflake import db
+        rows = db.execute_query(
+            "SELECT ticker, name FROM companies WHERE is_deleted = FALSE AND ticker IS NOT NULL"
+        )
+        return [{"ticker": r["ticker"], "name": r.get("name", r["ticker"]), "sector": "Unknown"} for r in rows]
+    except Exception:
+        return _FALLBACK_COMPANIES
+
+
+COMPANIES = _load_companies()
 
 # API base URL (within Docker network, the api service is at http://api:8000)
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://api:8000")

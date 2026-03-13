@@ -164,7 +164,7 @@ async def submit_interview(
         )
         return NoteSubmittedResponse(
             note_id=note_id,
-            note_type=NoteType.INTERVIEW_TRANSCRIPT.value,
+            note_type=NoteType.ANALYST_INTERVIEW.value,
             company_id=ticker.upper(),
             primary_dimension=payload.dimensions_discussed[0],
             message=f"Interview with {payload.interviewee_title} indexed successfully",
@@ -239,7 +239,7 @@ async def submit_data_room(
         )
         return NoteSubmittedResponse(
             note_id=note_id,
-            note_type=NoteType.DATA_ROOM_SUMMARY.value,
+            note_type=NoteType.DD_DATA_ROOM.value,
             company_id=ticker.upper(),
             primary_dimension=payload.dimension,
             message=f"Data room document '{payload.document_name}' indexed successfully",

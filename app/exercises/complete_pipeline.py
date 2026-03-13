@@ -28,7 +28,7 @@ DIM_KEY   = "data_infrastructure"
 DIMENSION = Dimension.DATA_INFRASTRUCTURE
 
 # ---------------------------------------------------------------------------
-# Hardcoded rubric (since /api/v1/rubrics doesn't exist in your app)
+# Hardcoded rubric 
 # ---------------------------------------------------------------------------
 RUBRIC_BY_LEVEL = {
     4: RubricCriteria(
@@ -189,18 +189,18 @@ async def run_pipeline():
         dimension=DIMENSION,
         score=dim_val,
         level=level,
+        confidence=float(conf.get("reliability", 0.8)),
         confidence_interval=(conf.get("ci_lower", dim_val - 6), conf.get("ci_upper", dim_val + 6)),
         evidence_count=int(conf.get("evidence_count", 0)),
         last_updated=results.get("scored_at", ""),
     )
-
-    # Step 4 — Rubric (local fallback since endpoint not in app)
+    # Step 4 — Rubric
     print(f"\n[Step 4] Loading rubric for Level {level.value}...")
     rubric = RUBRIC_BY_LEVEL.get(level.value, RUBRIC_BY_LEVEL[4])
     print(f"  Criteria : {rubric.criteria_text[:100]}...")
     print(f"  Keywords : {rubric.keywords[:5]}")
 
-    # Step 5 — Index evidence (mock since /api/v1/evidence not in app)
+    # Step 5 — Index evidence 
     print(f"\n[Step 5] Building and indexing evidence...")
     evidence  = build_mock_evidence(company.company_id)
     mapper    = DimensionMapper()
@@ -329,4 +329,10 @@ if __name__ == "__main__":
     import platform
     if platform.system() == "Windows":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    asyncio.run(run_pipeline())
+    
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(run_pipeline())
+    finally:
+        loop.close()

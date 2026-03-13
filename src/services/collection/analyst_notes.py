@@ -19,12 +19,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 class NoteType(str, Enum):
-    """Types of analyst-generated primary source evidence."""
-    INTERVIEW_TRANSCRIPT = "interview_transcript"
-    MANAGEMENT_MEETING   = "management_meeting"
-    SITE_VISIT           = "site_visit"
-    DD_FINDING           = "dd_finding"
-    DATA_ROOM_SUMMARY    = "data_room_summary"
+    """Types of analyst-generated primary source evidence (CS4 DD sources)."""
+    ANALYST_INTERVIEW  = "analyst_interview"    # interview transcripts
+    MANAGEMENT_MEETING = "management_meeting"
+    SITE_VISIT         = "site_visit"
+    DD_FINDING         = "dd_finding"
+    DD_DATA_ROOM       = "dd_data_room"         # data room document summaries
 
 
 class DDSeverity(str, Enum):
@@ -153,7 +153,7 @@ class AnalystNotesCollector:
         note = AnalystNote(
             note_id=note_id,
             company_id=company_id,
-            note_type=NoteType.INTERVIEW_TRANSCRIPT,
+            note_type=NoteType.ANALYST_INTERVIEW,
             title=f"Interview: {interviewee_title} — {interviewee}",
             content=f"Interview with {interviewee_title} ({interviewee})\n\n{transcript}",
             interviewee=interviewee,
@@ -223,7 +223,7 @@ class AnalystNotesCollector:
         note = AnalystNote(
             note_id=note_id,
             company_id=company_id,
-            note_type=NoteType.DATA_ROOM_SUMMARY,
+            note_type=NoteType.DD_DATA_ROOM,
             title=f"Data Room: {document_name}",
             content=f"Data Room Document: {document_name}\n\n{summary}",
             dimensions_discussed=[dimension],

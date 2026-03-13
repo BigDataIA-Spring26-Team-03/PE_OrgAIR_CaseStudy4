@@ -358,7 +358,7 @@ async def collect_all_companies(
     for company in companies:
         ticker = company.get("TICKER") or company.get("ticker")
         try:
-            result = await collect_by_ticker(ticker, use_cache=use_cache)
+            result = await collect_by_ticker.__wrapped__(ticker, use_cache=use_cache)
             collected.append(result)
         except Exception as e:
             failed.append({"ticker": ticker, "error": str(e)})

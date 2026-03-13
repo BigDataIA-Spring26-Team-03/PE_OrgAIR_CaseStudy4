@@ -24,24 +24,27 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 DOCUMENTS_TABLE = "documents_sec"
 CHUNKS_TABLE = "document_chunks_sec"
 
 AFTER_DATE = os.getenv("SEC_AFTER_DATE", "2021-01-01")
 SEC_SLEEP = float(os.getenv("SEC_SLEEP_SECONDS", "0.75"))
 
-# Filing counts per the plan spec
 FILING_COUNTS: Dict[str, int] = {
     "10-K": 2,
     "8-K": 2,
     "10-Q": 4,
 }
 
-# Canonical section names → exactly matches integration_service.py SEC_SECTION_MAP
+# Fallback section name used when no heading is detected for a filing type.
+# Guarantees the section column is never null/unknown for any ticker.
+FILING_TYPE_DEFAULT_SECTION: Dict[str, str] = {
+    "10-K": "Item 1 (Business)",
+    "10-Q": "Item 1",
+    "8-K": "Item 8.01",
+    "DEF 14A": "Proxy Statement",
+}
+
 CANONICAL = {
     "10-K": {
         "business":     "Item 1 (Business)",
@@ -56,23 +59,21 @@ CANONICAL = {
     },
     "10-Q": {
         "part1item1": "Item 1",
-        "part1item2": "Item 7 (MD&A)",   # Part I Item 2 = MD&A → same dimension as 10-K Item 7
+        "part1item2": "Item 7 (MD&A)",
         "part2item1": "Item 1A (Risk)",
     },
 }
 
-# Mistral OCR header → canonical name (used when OCR fallback runs for 10-K)
 MISTRAL_HEADER_MAP: List[Tuple[str, str]] = [
     ("ITEM 1A",         "Item 1A (Risk)"),
     ("RISK FACTORS",    "Item 1A (Risk)"),
     ("ITEM 7",          "Item 7 (MD&A)"),
     ("MD&A",            "Item 7 (MD&A)"),
     ("MANAGEMENT",      "Item 7 (MD&A)"),
-    ("ITEM 1",          "Item 1 (Business)"),   # must be after ITEM 1A
+    ("ITEM 1",          "Item 1 (Business)"),
     ("BUSINESS",        "Item 1 (Business)"),
 ]
 
-# Chunking parameters
 MIN_WORDS = 500
 MAX_WORDS = 1000
 OVERLAP_WORDS = 75
@@ -80,27 +81,13 @@ MIN_BLOCK_WORDS = 10
 MAX_NUMERIC_RATIO = 0.65
 
 
-# ---------------------------------------------------------------------------
-# SECPipeline
-# ---------------------------------------------------------------------------
-
 class SECPipeline:
-    """
-    Unified download → parse → chunk → store pipeline for SEC filings.
-
-    Usage:
-        pipeline = SECPipeline()
-        result = pipeline.run("NVDA")
-        # result = {"ticker": "NVDA", "docs_processed": 8, "chunks_created": 142, "errors": []}
-    """
-
     def __init__(self) -> None:
         self._email = self._require_env("SEC_EDGAR_USER_AGENT_EMAIL")
         self._bucket = self._require_env("S3_BUCKET_NAME")
         self._region = os.getenv("AWS_REGION", "us-east-1")
         self._mistral_key = os.getenv("MISTRAL_API_KEY")
 
-        # Set edgartools identity (required for all SEC EDGAR API calls)
         try:
             from edgar import set_identity  # type: ignore
             set_identity(f"OrgAIR {self._email}")
@@ -119,22 +106,13 @@ class SECPipeline:
             ),
         )
 
-    # ------------------------------------------------------------------
-    # Public entry point
-    # ------------------------------------------------------------------
-
     def run(self, ticker: str) -> Dict[str, Any]:
-        """
-        Full pipeline for one ticker. Downloads, parses, chunks, and stores all filings.
-        Skips duplicates based on content hash.
-        """
         ticker = ticker.upper().strip()
         logger.info("=" * 60)
         logger.info("SEC PIPELINE: %s", ticker)
         logger.info("=" * 60)
 
         company_id = self._resolve_company_id(ticker)
-
         docs = self._download(ticker, company_id)
         total_chunks = 0
         errors: List[str] = []
@@ -155,11 +133,11 @@ class SECPipeline:
                 for section_name, text in sections.items():
                     if not text or len(text.split()) < MIN_BLOCK_WORDS:
                         continue
-                    chunks = self._chunk_section(text, section_name, doc["doc_id"])
+                    chunks = self._chunk_section(text, section_name, doc["doc_id"], doc["filing_type"])
                     all_chunks.extend(chunks)
 
                 if all_chunks:
-                    self._save_chunks(all_chunks)
+                    self._save_chunks(doc["doc_id"], all_chunks)
                     total_chunks += len(all_chunks)
                     total_word_count = sum(c["word_count"] for c in all_chunks)
                     self._update_doc_status(
@@ -190,15 +168,7 @@ class SECPipeline:
         logger.info("Done: %s", result)
         return result
 
-    # ------------------------------------------------------------------
-    # Step 2: Download from SEC EDGAR
-    # ------------------------------------------------------------------
-
     def _download(self, ticker: str, company_id: Optional[str]) -> List[Dict[str, Any]]:
-        """
-        Download filings for each type, upload raw files to S3,
-        insert records into documents_sec. Returns list of doc metadata dicts.
-        """
         download_root = Path("data/raw")
         download_root.mkdir(parents=True, exist_ok=True)
 
@@ -233,7 +203,6 @@ class SECPipeline:
                     if status == "chunked":
                         logger.info("  Skipping (already chunked): %s", main_file.name)
                         continue
-                    # Exists but not chunked — re-queue for parsing
                     existing_id = str(row.get("ID") or row.get("id"))
                     existing_path = str(row.get("LOCAL_PATH") or row.get("local_path") or str(main_file))
                     logger.info("  Re-queuing for parse (status=%s): %s doc_id=%s", status, main_file.name, existing_id)
@@ -295,15 +264,7 @@ class SECPipeline:
 
         return docs
 
-    # ------------------------------------------------------------------
-    # Step 3: Parse — edgartools primary, Mistral OCR fallback for PDFs
-    # ------------------------------------------------------------------
-
     def _parse_doc(self, doc: Dict[str, Any]) -> Dict[str, str]:
-        """
-        Route to correct parser based on filing type and file format.
-        Returns {canonical_section_name: clean_text}.
-        """
         filing_type = doc["filing_type"]
         ticker = doc["ticker"]
         local_path = doc["local_path"]
@@ -311,14 +272,12 @@ class SECPipeline:
 
         if is_pdf:
             logger.info("  PDF detected — using Mistral OCR for %s", local_path)
-            return self._parse_with_mistral_ocr(local_path, filing_type)
+            sections = self._parse_with_mistral_ocr(local_path, filing_type)
+            return self._ensure_sections(sections, filing_type, local_path)
 
-        # edgartools primary
         try:
             sections = self._parse_with_edgartools(ticker, filing_type, local_path)
             if sections:
-                # For 10-K: edgartools sometimes misses Item 7 (mda returns None).
-                # Supplement any missing critical sections from the local HTML file.
                 if filing_type == "10-K":
                     expected = ["Item 1 (Business)", "Item 1A (Risk)", "Item 7 (MD&A)"]
                     missing = [s for s in expected if s not in sections]
@@ -329,20 +288,48 @@ class SECPipeline:
                             if s in bs_sections:
                                 sections[s] = bs_sections[s]
                                 logger.info("  Supplemented %s from BeautifulSoup", s)
-                return sections
+                return self._ensure_sections(sections, filing_type, local_path)
         except Exception as exc:
             logger.warning("edgartools failed for %s %s: %s — trying HTML parser", ticker, filing_type, exc)
 
-        # HTML fallback (BeautifulSoup) — handles full-submission.txt and .htm files
-        return self._parse_with_beautifulsoup(local_path, filing_type)
+        sections = self._parse_with_beautifulsoup(local_path, filing_type)
+        return self._ensure_sections(sections, filing_type, local_path)
+
+    def _ensure_sections(
+        self, sections: Dict[str, str], filing_type: str, local_path: str
+    ) -> Dict[str, str]:
+        """
+        If parsing produced no sections at all, fall back to storing the full
+        document text under the filing type's default section name.
+        This guarantees the section column is never null or 'unknown'.
+        """
+        if sections:
+            return sections
+
+        logger.warning(
+            "No sections detected for %s %s — storing full text under default section",
+            filing_type, local_path
+        )
+        default_section = FILING_TYPE_DEFAULT_SECTION.get(filing_type, filing_type)
+        try:
+            with open(local_path, "rb") as f:
+                raw = f.read()
+            primary = self._extract_primary_document(raw)
+            from bs4 import BeautifulSoup  # type: ignore
+            soup = BeautifulSoup(primary, "lxml")
+            for tag in soup(["script", "style", "head"]):
+                tag.decompose()
+            text = soup.get_text(separator="\n", strip=True)
+            if len(text.split()) >= MIN_BLOCK_WORDS:
+                return {default_section: text}
+        except Exception as exc:
+            logger.error("Fallback full-text extraction failed for %s: %s", local_path, exc)
+
+        return {}
 
     def _parse_with_edgartools(
         self, ticker: str, filing_type: str, local_path: str
     ) -> Dict[str, str]:
-        """
-        Use edgartools to extract clean section text from SEC filings.
-        Returns canonical {section_name: text} dict.
-        """
         from edgar import Company  # type: ignore
 
         company = Company(ticker)
@@ -370,7 +357,6 @@ class SECPipeline:
             if not filings:
                 return {}
             tenq = filings.latest(1).obj()
-            # edgartools TenQ exposes parts/items
             for attr_key, canonical_name in CANONICAL["10-Q"].items():
                 text = getattr(tenq, attr_key, None)
                 if text:
@@ -378,7 +364,6 @@ class SECPipeline:
                     if len(text_str.split()) >= MIN_BLOCK_WORDS:
                         sections[canonical_name] = text_str
 
-        
         elif filing_type == "8-K":
             filings = company.get_filings(form="8-K")
             if not filings:
@@ -386,20 +371,16 @@ class SECPipeline:
             eightk = filings.latest(1).obj()
             items_raw = getattr(eightk, "items", None) or []
 
-            # edgartools can return items as a list of objects OR a dict — handle both
             if isinstance(items_raw, dict):
                 items_dict = items_raw
             elif isinstance(items_raw, list):
-                # Each item in the list is typically an object with .item_number and .text attributes
                 items_dict = {}
                 for item in items_raw:
-                    # Try attribute-style access first (edgartools Item objects)
                     item_num = getattr(item, "item_number", None) or getattr(item, "number", None)
                     text = getattr(item, "text", None) or getattr(item, "content", None)
                     if item_num and text:
                         items_dict[str(item_num)] = text
                     elif isinstance(item, str):
-                        # Fallback: plain string — store by index
                         items_dict[str(len(items_dict))] = item
             else:
                 logger.warning("Unexpected 8-K items type: %s", type(items_raw))
@@ -414,16 +395,10 @@ class SECPipeline:
                     if len(text_str.split()) >= MIN_BLOCK_WORDS:
                         sections[canonical_name] = text_str
 
-                return sections
+        # NOTE: return is outside the for loop for all branches
+        return sections
 
-    def _parse_with_mistral_ocr(
-        self, local_path: str, filing_type: str
-    ) -> Dict[str, str]:
-        """
-        Use Mistral OCR API to extract structured markdown from a PDF filing,
-        then map markdown headers to canonical section names.
-        Requires MISTRAL_API_KEY env var.
-        """
+    def _parse_with_mistral_ocr(self, local_path: str, filing_type: str) -> Dict[str, str]:
         if not self._mistral_key:
             logger.warning("MISTRAL_API_KEY not set — Mistral OCR fallback unavailable")
             return {}
@@ -436,24 +411,18 @@ class SECPipeline:
             with open(local_path, "rb") as f:
                 file_data = f.read()
 
-            # Upload file to Mistral
             uploaded = client.files.upload(
                 file={"file_name": Path(local_path).name, "content": file_data},
                 purpose="ocr",
             )
             signed = client.files.get_signed_url(file_id=uploaded.id, expiry=1)
-
-            # Run OCR
             ocr_result = client.ocr.process(
                 model="mistral-ocr-latest",
                 document={"type": "url", "url": signed.url},
             )
-
-            # Combine all pages into one markdown string
             full_markdown = "\n\n".join(
                 page.markdown for page in ocr_result.pages if page.markdown
             )
-
             return self._extract_sections_from_markdown(full_markdown, filing_type)
 
         except Exception as exc:
@@ -461,23 +430,16 @@ class SECPipeline:
             return {}
 
     def _extract_primary_document(self, raw: bytes) -> bytes:
-        """
-        Extract the primary HTML document from an SGML full-submission.txt.
-        The SGML wrapper contains multiple <DOCUMENT> blocks (filings + exhibits +
-        binary attachments). We only want the first <TEXT> block (the actual filing).
-        Uses plain string search — no regex.
-        """
         try:
             text = raw.decode("utf-8", errors="replace")
         except Exception:
             return raw
 
-        # Find the first <TEXT> marker (the primary filing document)
         start_marker = "<TEXT>"
         end_marker = "</TEXT>"
         start = text.find(start_marker)
         if start == -1:
-            return raw  # Not SGML — return as-is
+            return raw
 
         end = text.find(end_marker, start)
         if end == -1:
@@ -486,30 +448,19 @@ class SECPipeline:
         primary = text[start + len(start_marker):end]
         return primary.encode("utf-8")
 
-    def _parse_with_beautifulsoup(
-        self, local_path: str, filing_type: str
-    ) -> Dict[str, str]:
-        """
-        Parse HTML/SGML SEC filings using BeautifulSoup.
-        Extracts only the primary document from the SGML container first,
-        then locates Item headings and captures the text that follows each.
-        Used as fallback when edgartools cannot connect.
-        """
+    def _parse_with_beautifulsoup(self, local_path: str, filing_type: str) -> Dict[str, str]:
         from bs4 import BeautifulSoup  # type: ignore
 
         try:
             with open(local_path, "rb") as f:
                 raw = f.read()
 
-            # Strip the SGML wrapper — only parse the primary filing HTML
             primary_html = self._extract_primary_document(raw)
             soup = BeautifulSoup(primary_html, "lxml")
 
-            # Remove script/style/table-of-contents noise
             for tag in soup(["script", "style", "head"]):
                 tag.decompose()
 
-            # Collect all text-bearing elements in document order
             elements = soup.find_all(["p", "div", "span", "td", "tr", "h1", "h2", "h3", "h4"])
 
             sections: Dict[str, str] = {}
@@ -531,9 +482,8 @@ class SECPipeline:
                 if not raw_text or len(raw_text) < 5:
                     continue
 
-                upper = raw_text.upper()[:120]  # Only check start of text for headings
+                upper = raw_text.upper()[:120]
 
-                # Detect section headings by Item keyword presence in short text blocks
                 if len(raw_text) < 200:
                     detected = self._detect_section_heading(upper, filing_type)
                     if detected:
@@ -554,16 +504,11 @@ class SECPipeline:
             return {}
 
     def _detect_section_heading(self, upper_text: str, filing_type: str) -> Optional[str]:
-        """
-        Identify whether a short text block is a known section heading.
-        Uses plain string containment — no regex.
-        """
         if filing_type == "10-K":
-            # Order matters: check 1A before 1
             if "ITEM 1A" in upper_text or "RISK FACTORS" in upper_text:
                 return "Item 1A (Risk)"
             if "ITEM 7A" in upper_text:
-                return None  # Quantitative disclosures — skip
+                return None
             if "ITEM 7" in upper_text and ("MANAGEMENT" in upper_text or "MD&A" in upper_text or upper_text.strip().startswith("ITEM 7")):
                 return "Item 7 (MD&A)"
             if "ITEM 1" in upper_text and "BUSINESS" in upper_text:
@@ -574,7 +519,7 @@ class SECPipeline:
             if "ITEM 1A" in upper_text or "RISK FACTORS" in upper_text:
                 return "Item 1A (Risk)"
             if "ITEM 2" in upper_text and ("MANAGEMENT" in upper_text or "MD&A" in upper_text):
-                return "Item 7 (MD&A)"   # 10-Q Part I Item 2 = MD&A
+                return "Item 7 (MD&A)"
             if "ITEM 1" in upper_text and "FINANCIAL" in upper_text:
                 return "Item 1"
         elif filing_type == "8-K":
@@ -583,18 +528,11 @@ class SECPipeline:
                     return canonical
         return None
 
-    def _extract_sections_from_markdown(
-        self, markdown: str, filing_type: str
-    ) -> Dict[str, str]:
-        """
-        Parse markdown from Mistral OCR output into canonical sections.
-        Uses header-level splitting (no regex on raw HTML).
-        """
+    def _extract_sections_from_markdown(self, markdown: str, filing_type: str) -> Dict[str, str]:
         sections: Dict[str, str] = {}
         if not markdown:
             return sections
 
-        # Split on markdown headers (# or ##)
         lines = markdown.split("\n")
         current_header: Optional[str] = None
         current_lines: List[str] = []
@@ -623,53 +561,38 @@ class SECPipeline:
         return sections
 
     def _map_header_to_canonical(self, header_upper: str, filing_type: str) -> Optional[str]:
-        """
-        Map an uppercase markdown header string to a canonical section name.
-        Works for 10-K, 10-Q, 8-K using the MISTRAL_HEADER_MAP and CANONICAL tables.
-        """
-        # 10-K: use MISTRAL_HEADER_MAP (ordered, ITEM 1A before ITEM 1)
         if filing_type == "10-K":
             for pattern, canonical in MISTRAL_HEADER_MAP:
                 if pattern in header_upper:
                     return canonical
             return None
 
-        # 8-K: look for ITEM X.XX patterns
         if filing_type == "8-K":
             for item_num, canonical in CANONICAL["8-K"].items():
                 if item_num in header_upper:
                     return canonical
             return None
 
-        # 10-Q: look for PART I ITEM 1/2
         if filing_type == "10-Q":
             if "ITEM 1A" in header_upper or "RISK" in header_upper:
                 return "Item 1A (Risk)"
             if "ITEM 2" in header_upper or "MD&A" in header_upper or "MANAGEMENT" in header_upper:
-                return "Item 7 (MD&A)"   # 10-Q Part I Item 2 = MD&A
+                return "Item 7 (MD&A)"
             if "ITEM 1" in header_upper:
                 return "Item 1"
             return None
 
         return None
 
-    # ------------------------------------------------------------------
-    # Step 4: Chunk sections
-    # ------------------------------------------------------------------
-
     def _chunk_section(
-        self, text: str, section: str, doc_id: str
+        self, text: str, section: str, doc_id: str, filing_type: str
     ) -> List[Dict[str, Any]]:
-        """
-        Semantic chunking within a single section.
-        - Splits on paragraph boundaries (\n\n)
-        - Filters noise blocks
-        - Builds 500–1000 word windows with 75-word overlap
-        """
-        # Split into paragraph blocks
+        # Guarantee section is always a meaningful string, never None/empty
+        if not section or not section.strip():
+            section = FILING_TYPE_DEFAULT_SECTION.get(filing_type, filing_type)
+
         raw_blocks = [b.strip() for b in text.split("\n\n") if b.strip()]
 
-        # Filter noise blocks
         clean_blocks: List[str] = []
         for block in raw_blocks:
             words = block.split()
@@ -683,7 +606,6 @@ class SECPipeline:
         if not clean_blocks:
             return []
 
-        # Build chunks by accumulating blocks until hitting word target
         chunks: List[Dict[str, Any]] = []
         current_words: List[str] = []
         char_offset = 0
@@ -706,23 +628,19 @@ class SECPipeline:
             block_words = block.split()
             if len(current_words) + len(block_words) > MAX_WORDS and current_words:
                 chunks.append(make_chunk(current_words, chunk_start))
-                # Overlap: carry last OVERLAP_WORDS into next chunk
                 overlap = current_words[-OVERLAP_WORDS:] if len(current_words) > OVERLAP_WORDS else current_words[:]
                 chunk_start = char_offset - len(" ".join(overlap))
                 current_words = overlap
             current_words.extend(block_words)
-            char_offset += len(block) + 2  # +2 for \n\n separator
+            char_offset += len(block) + 2
 
-        # Final chunk
         if len(current_words) >= MIN_BLOCK_WORDS:
             chunks.append(make_chunk(current_words, chunk_start))
         elif chunks and current_words:
-            # Merge undersized tail into previous chunk
             chunks[-1]["content"] += " " + " ".join(current_words)
             chunks[-1]["word_count"] += len(current_words)
             chunks[-1]["end_char"] = chunks[-1]["start_char"] + len(chunks[-1]["content"])
 
-        # Guard: split any chunk still over MAX_WORDS at sentence boundary
         final_chunks: List[Dict[str, Any]] = []
         for chunk in chunks:
             if chunk["word_count"] <= MAX_WORDS:
@@ -731,7 +649,6 @@ class SECPipeline:
                 split_chunks = self._split_oversized(chunk, doc_id, len(final_chunks))
                 final_chunks.extend(split_chunks)
 
-        # Re-index
         for i, c in enumerate(final_chunks):
             c["chunk_index"] = i
 
@@ -740,7 +657,6 @@ class SECPipeline:
     def _split_oversized(
         self, chunk: Dict[str, Any], doc_id: str, index_offset: int
     ) -> List[Dict[str, Any]]:
-        """Split a chunk that exceeds MAX_WORDS at sentence boundaries."""
         sentences = chunk["content"].split(". ")
         result: List[Dict[str, Any]] = []
         current: List[str] = []
@@ -780,19 +696,10 @@ class SECPipeline:
 
         return result
 
-    # ------------------------------------------------------------------
-    # Step 5: Save to S3 + Snowflake
-    # ------------------------------------------------------------------
-
     def _save_parsed_to_s3(
-        self,
-        ticker: str,
-        filing_type: str,
-        filing_date: str,
-        sections: Dict[str, str],
-        doc_id: str,
+        self, ticker: str, filing_type: str, filing_date: str,
+        sections: Dict[str, str], doc_id: str,
     ) -> str:
-        """Save parsed sections as gzip JSON to S3. Returns S3 key."""
         ft_norm = filing_type.upper().replace(" ", "").replace("-", "")
         s3_key = f"parsed/{ticker}/{ft_norm}/{filing_date}/{doc_id}.json.gz"
         payload = {
@@ -806,12 +713,15 @@ class SECPipeline:
         self._s3.put_object(Bucket=self._bucket, Key=s3_key, Body=body, ContentType="application/gzip")
         return s3_key
 
-    def _save_chunks(self, chunks: List[Dict[str, Any]]) -> None:
-        """Batch insert chunks into document_chunks_sec."""
+    def _save_chunks(self, doc_id: str, chunks: List[Dict[str, Any]]) -> None:
+        # Delete any stale rows for this document before inserting fresh chunks.
+        # Prevents duplicates when a doc is re-queued for parsing.
+        self._db.execute_update(
+            f"DELETE FROM {CHUNKS_TABLE} WHERE document_id = %(doc_id)s",
+            {"doc_id": doc_id},
+        )
+
         for chunk in chunks:
-            # Escape single quotes in content
-            safe_content = chunk["content"].replace("'", "''")
-            safe_section = chunk["section"].replace("'", "''")
             self._db.execute_update(
                 f"""
                 INSERT INTO {CHUNKS_TABLE}
@@ -836,7 +746,6 @@ class SECPipeline:
     def _update_doc_status(
         self, doc_id: str, status: str, extra: Optional[Dict[str, Any]] = None
     ) -> None:
-        """Update status (and optional fields) in documents_sec."""
         set_parts = ["status = %(status)s"]
         params: Dict[str, Any] = {"status": status, "id": doc_id}
 
@@ -850,11 +759,7 @@ class SECPipeline:
             params,
         )
 
-    # ------------------------------------------------------------------
-    # Utilities
-    # ------------------------------------------------------------------
-
-    def _resolve_company_id(self, ticker: str) -> Optional[str]:
+    def _resolve_company_id(self, ticker: str) -> str:
         rows = self._db.execute_query(
             "SELECT id FROM companies WHERE UPPER(ticker) = %(t)s AND is_deleted = FALSE LIMIT 1",
             {"t": ticker},
@@ -862,8 +767,24 @@ class SECPipeline:
         if rows:
             r = rows[0]
             return str(r.get("ID") or r.get("id"))
-        logger.warning("Company %s not found in companies table — proceeding without company_id", ticker)
-        return None
+
+        logger.info("Company %s not found — auto-inserting into companies table", ticker)
+        industry_rows = self._db.execute_query("SELECT id FROM industries LIMIT 1")
+        if not industry_rows:
+            raise RuntimeError("No industries in DB. Seed the industries table first.")
+        ir = industry_rows[0]
+        industry_id = str(ir.get("ID") or ir.get("id"))
+
+        new_id = str(uuid4())
+        self._db.execute_update(
+            """
+            INSERT INTO companies (id, name, ticker, industry_id, position_factor, is_deleted, created_at, updated_at)
+            VALUES (%(id)s, %(name)s, %(ticker)s, %(industry_id)s, 0.0, FALSE, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
+            """,
+            {"id": new_id, "name": ticker, "ticker": ticker, "industry_id": industry_id},
+        )
+        logger.info("Auto-inserted company: %s → %s", ticker, new_id)
+        return new_id
 
     def _get_download_folders(self, ticker: str, filing_type: str, limit: int) -> List[Path]:
         base = Path("data/raw/sec-edgar-filings") / ticker / filing_type
@@ -942,14 +863,20 @@ class SECPipeline:
         return v
 
 
-# ---------------------------------------------------------------------------
-# CLI / Script entry point
-# ---------------------------------------------------------------------------
-
 def run_pipeline(tickers: Optional[List[str]] = None) -> None:
-    """Run the SEC pipeline for specified tickers (or default 5 companies)."""
-    default_tickers = ["NVDA", "JPM", "WMT", "GE", "DG"]
-    targets = [t.upper() for t in (tickers or default_tickers)]
+    if tickers:
+        targets = [t.upper() for t in tickers]
+    else:
+        try:
+            from app.services.snowflake import db
+            rows = db.execute_query(
+                "SELECT ticker FROM companies WHERE is_deleted = FALSE AND ticker IS NOT NULL"
+            )
+            targets = [r["ticker"] for r in rows]
+            logger.info("Loaded %d active tickers from Snowflake", len(targets))
+        except Exception as exc:
+            logger.warning("Could not load tickers from Snowflake (%s), falling back to defaults", exc)
+            targets = ["NVDA", "JPM", "WMT", "GE", "DG"]
 
     pipeline = SECPipeline()
     for ticker in targets:

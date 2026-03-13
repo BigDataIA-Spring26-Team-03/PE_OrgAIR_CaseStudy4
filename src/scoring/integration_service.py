@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -135,7 +136,33 @@ class ScoringIntegrationService:
                 return company
 
         logger.warning("company_not_found", ticker=ticker)
-        return {"ticker": ticker, "id": None, "name": ticker}
+        return self.register_company(ticker)
+
+    def register_company(self, ticker: str, sector: str = "Unknown") -> Dict[str, Any]:
+        """Auto-register an unknown ticker in Snowflake using yfinance metadata."""
+        from app.services.snowflake import db
+        ticker = ticker.upper()
+        try:
+            import yfinance as yf
+            info = yf.Ticker(ticker).info
+            name = info.get("longName") or info.get("shortName") or ticker
+            sector = info.get("sector") or sector
+        except Exception as exc:
+            logger.warning("yfinance_lookup_failed", ticker=ticker, error=str(exc))
+            name = ticker
+        company_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, ticker))
+        try:
+            db.execute_update(
+                """
+                INSERT INTO companies (id, name, ticker, position_factor, is_deleted, created_at, updated_at)
+                VALUES (%(id)s, %(name)s, %(ticker)s, 0.0, FALSE, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
+                """,
+                {"id": company_id, "name": name, "ticker": ticker},
+            )
+            logger.info("company_registered", ticker=ticker, name=name, company_id=company_id)
+        except Exception as exc:
+            logger.warning("company_insert_failed", ticker=ticker, error=str(exc))
+        return {"id": company_id, "ticker": ticker, "name": name, "sector": sector}
 
     def fetch_cs2_evidence(self, ticker: str) -> Dict[str, Any]:
         """
