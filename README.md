@@ -1,313 +1,332 @@
-# PE Org-AI-R Platform  
-## Case Study 3 — AI Scoring Engine  
-### From Evidence to Calibrated AI Readiness Scores  
+# PE Org-AI-R Platform
+## Case Study 4 — RAG & Search Engine
+### From Scored Evidence to Cited Investment Justifications
 
-**Course:** Big Data and Intelligent Analytics  
-**Instructor:** Professor Sri Krishnamurthy  
-**Term:** Spring 2026  
+**Course:** Big Data and Intelligent Analytics
+**Instructor:** Professor Sri Krishnamurthy
+**Term:** Spring 2026
 
 ## Team 3
 
-- Ishaan Samel  
-- Ayush Fulsundar  
-- Vaishnavi Srinivas  
+- Ishaan Samel
+- Ayush Fulsundar
+- Vaishnavi Srinivas
 
 ---
 
 ## 🚀 Live Application
 
 | Component | Link |
-|------------|------|
-| Demo Video | https://youtu.be/qa3jQ8_GIr0 |
-| Interactive Codelab | https://codelabs-preview.appspot.com/?file_id=1Iza8HTzKo2jdCG3gzKNTNFgZx7HNH_amvO5q0_4Bm_0#10 |
+|-----------|------|
+| Demo Video | TBD |
+| Interactive Codelab | TBD |
 
 ---
 
 ## 📌 Executive Summary
 
-Case Study 3 implements the Organizational AI-Readiness (Org-AI-R) Scoring Engine for the PE Org-AI-R platform.
+Case Study 4 implements the RAG (Retrieval-Augmented Generation) & Search layer of the PE Org-AI-R platform.
 
 Building on:
 
-- Case Study 1 → Platform Foundation (FastAPI, Snowflake, Redis, Docker)  
-- Case Study 2 → Evidence Collection & Signal Extraction  
-- Case Study 3 → Risk-adjusted, sector-calibrated scoring engine  
+- Case Study 1 → Platform Foundation (FastAPI, Snowflake, Redis, Docker)
+- Case Study 2 → Evidence Collection & Signal Extraction
+- Case Study 3 → Risk-adjusted, sector-calibrated scoring engine
+- Case Study 4 → RAG-powered search, score justification, and IC meeting preparation
 
-The Org-AI-R engine transforms structured governance, technology, talent, culture, and external signals into:
+The CS4 layer answers the critical PE question:
 
-- Risk-adjusted AI maturity scores  
-- Sector-relative benchmarking  
-- Interaction-based synergy modeling  
-- SEM-based confidence intervals  
-- Private equity decision-support metrics  
+> *"Why did this company score 72 on Data Infrastructure?"*
 
-The final output is a statistically defensible AI readiness score suitable for portfolio benchmarking and investment evaluation.
+It transforms raw Org-AI-R scores into **cited, evidence-backed investment justifications** suitable for IC (Investment Committee) presentations.
+
+Key capabilities:
+
+- Hybrid semantic + keyword evidence search (Dense + BM25 + RRF fusion)
+- HyDE query enhancement for better retrieval
+- Score justification generation with cited evidence
+- IC Meeting Prep package generation across all 7 dimensions
+- On-demand company onboarding for any US-listed ticker
+- Dynamic leadership signals via Wikidata + Wikipedia enrichment
 
 ---
 
 ## 🏗 System Architecture Overview
 
-The system is composed of five major layers:
-
-- Data Ingestion Layer (CS2)  
-- FastAPI Backend (CS1 Foundation)  
-- Org-AI-R Scoring Engine (CS3)  
-- Persistence Layer (Snowflake + Redis + S3)  
-- Visualization Layer (Streamlit)  
-## 🏗 Architecture Diagram
-
 ```text
-+----------------------------+                 +------------------------------+
-|            User            |                 |        Airflow (8081)        |
-|   (Private Equity Viewer)  |                 |  dags/org_air_scoring_dag.py |
-+-------------+--------------+                 +--------------+---------------+
-              |                                               |
-              | (views scores, triggers runs)                 | (scheduled/batch runs)
-              v                                               v
-+----------------------------+                 +------------------------------+
-|     Streamlit (8501)       | <-------------> |        FastAPI (8000)         |
-| app/streamlit_app/app.py   |   REST calls    |   app.main:app + routers      |
-+-------------+--------------+                 +--------------+---------------+
-              |                                               |
-              |                                               |
-              |                                               v
-              |                                +------------------------------+
-              |                                |   Integration Service Layer  |
-              |                                |  src/scoring/integration.py  |
-              |                                +--------------+---------------+
-              |                                               |
-              |                                               v
-              |                                +------------------------------+
-              |                                |   Org-AI-R Scoring Engine    |
-              |                                |        src/scoring/          |
-              |                                |------------------------------|
-              |                                | evidence_mapper.py           |
-              |                                | rubric_scorer.py             |
-              |                                | talent_concentration.py      |
-              |                                | vr_calculator.py             |
-              |                                | position_factor.py           |
-              |                                | hr_calculator.py             |
-              |                                | synergy_calculator.py        |
-              |                                | confidence.py (SEM)          |
-              |                                | org_air_calculator.py        |
-              |                                +--------------+---------------+
-              |                                               |
-              v                                               v
-+----------------------------+                 +------------------------------+
-|     Redis Cache (optional) |                 |         Snowflake DB          |
-|   app/services/redis_*.py  |                 |   app/services/snowflake.py   |
-+----------------------------+                 +--------------+---------------+
-                                                              ^
-                                                              |
-                                                              |  reads CS2 evidence/signals
-                                                              |
-                                      +-----------------------+------------------------+
-                                      |                Evidence Layer (CS2)            |
-                                      |              app/pipelines/ + scripts/         |
-                                      |------------------------------------------------|
-                                      | SEC EDGAR -> S3 -> parse -> chunk              |
-                                      | glassdoor_collector.py  -> Snowflake           |
-                                      | board_collector + llm_extractor -> Snowflake   |
-                                      | external_signals_orchestrator -> Snowflake     |
-                                      +-----------------------+------------------------+
++---------------------------+               +--------------------------------+
+|          User             |               |       Airflow (8081)           |
+| (Private Equity Analyst)  |               | dags/evidence_indexing_dag.py  |
++------------+--------------+               +---------------+----------------+
+             |                                              |
+             | (search, justify, IC prep)                   | (scheduled indexing)
+             v                                              v
++---------------------------+               +--------------------------------+
+|    Streamlit (8501)       | <-----------> |        FastAPI (8000)          |
+| streamlit_app/app.py      |   REST calls  |   app.main:app + routers       |
++------------+--------------+               +---------------+----------------+
+             |                                              |
+             |                              +---------------+----------------+
+             |                              |     CS4 Service Layer          |
+             |                              |--------------------------------|
+             |                              | src/services/search/           |
+             |                              |   vector_store.py              |
+             |                              | src/services/retrieval/        |
+             |                              |   hybrid.py (Dense+BM25+RRF)   |
+             |                              |   hyde.py (query enhancement)  |
+             |                              | src/services/justification/    |
+             |                              |   generator.py                 |
+             |                              | src/services/integration/      |
+             |                              |   cs1_client.py                |
+             |                              |   cs2_client.py                |
+             |                              |   cs3_client.py                |
+             |                              +---------------+----------------+
+             |                                              |
+             v                                              v
++---------------------------+               +--------------------------------+
+|    ChromaDB (local)       |               |         Snowflake DB           |
+|  chroma_data/             |               |   companies, signals,          |
+|  Dense vector index       |               |   assessments, dimension       |
+|  BM25 sparse index        |               |   scores, evidence             |
++---------------------------+               +--------------------------------+
+                                                           ^
+                                                           |
+                                       +-------------------+------------------+
+                                       |         Evidence Layer (CS2)         |
+                                       |  app/pipelines/ + app/routers/       |
+                                       |--------------------------------------|
+                                       | SEC EDGAR → S3 → parse → chunk      |
+                                       | board_collector.py (dynamic CIK)    |
+                                       | patent_signals.py (dynamic USPTO)   |
+                                       | leadership_signals.py (Wikidata)    |
+                                       | glassdoor_collector.py              |
+                                       | pipeline.py (on-demand onboarding)  |
+                                       +--------------------------------------+
 
 Storage:
-- AWS S3: raw/parsed SEC documents (used by CS2 pipelines)
-- Snowflake: signals + scoring outputs + confidence bounds
-- Redis: caching for repeated reads (optional)
-Ports:
-- FastAPI: 8000  | Streamlit: 8501 | Airflow: 8081
+- ChromaDB: dense vector index + BM25 sparse index for hybrid search
+- Snowflake: companies, signals, dimension scores, evidence metadata
+- AWS S3: raw/parsed SEC documents
 
+Ports:
+- FastAPI: 8000 | Streamlit: 8501 | Airflow: 8081
 ```
 
-## 📊 Org-AI-R Scoring Framework
+---
 
-The scoring engine consists of:
+## 🔍 CS4 Core Components
 
-- 7 Dimension Scores  
-- Vᴿ (Idiosyncratic AI Readiness)  
-- Position Factor (Pᶠ)  
-- Hᴿ (Relative AI Strength)  
-- Synergy Interaction  
-- SEM-Based Confidence Interval  
+### 1️⃣ Integration Layer
+
+Connects CS4 to all upstream case studies.
+
+**CS1 Client** — fetches company metadata (ticker, sector, market cap)
+**CS2 Client** — loads evidence chunks with source type, confidence, dimension
+**CS3 Client** — retrieves dimension scores, rubric criteria, level keywords
 
 ---
 
-## 🔢 Final Formula
+### 2️⃣ Multi-Provider LLM Router (LiteLLM)
 
-Org-AI-R = (1 − β) × Weighted Components + β × Synergy  
+Routes LLM calls across providers with fallback:
 
-Where:
+```
+Primary: Claude (Anthropic)
+Fallback: GPT-4 (OpenAI)
+```
 
-- α = 0.60 (dimension emphasis)  
-- β = 0.12 (synergy weight)  
-- δ = 0.15 (position amplification factor)  
-
-All numerical calculations use `Decimal` for financial-grade precision and reproducibility.
-
----
-
-## 🧩 Core Scoring Components (CS3)
-
-### 1️⃣ Evidence Mapper
-
-Maps structured CS2 signals into 7 Org-AI-R dimensions:
-
-- Data Infrastructure  
-- AI Governance  
-- Technology Stack  
-- Talent  
-- Leadership  
-- Use Case Portfolio  
-- Culture  
-
-Features:
-
-- Weighted signal-to-dimension mapping matrix  
-- Primary & secondary weights  
-- Reliability adjustment  
-- Default midpoint score (50) if evidence absent  
-- Property-based boundedness validation  
+Supports:
+- Score justification generation
+- IC meeting prep synthesis
+- Evidence quality assessment
 
 ---
 
-### 2️⃣ Rubric Scorer
+### 3️⃣ Hybrid Retrieval (Dense + BM25 + RRF)
 
-Implements a 5-level calibrated rubric per dimension.
+**Dense retrieval** — ChromaDB with sentence-transformers embeddings (semantic similarity)
 
-**Scoring Process:**
+**BM25 sparse retrieval** — keyword-based exact matching
 
-- Normalize evidence  
-- Match qualitative keywords  
-- Evaluate quantitative signals  
-- Assign level (1–5)  
-- Interpolate within score band  
+**RRF Fusion** — Reciprocal Rank Fusion combines both rankings for best results
 
-Ensures qualitative inputs produce deterministic numerical outputs.
+```
+Final Score = 1/(k + rank_dense) + 1/(k + rank_bm25)
+```
 
----
-
-### 3️⃣ Talent Concentration Risk
-
-Models key-person dependency:
-
-TC = 0.4L + 0.3T + 0.2S + 0.1M  
-
-Bounded to [0,1]
-
-**Risk Adjustment:**
-
-TalentRiskAdj = 1 − 0.15 × max(0, TC − 0.25)
-
-High concentration reduces effective readiness.
+Filters available:
+- `company_id` — filter by ticker
+- `dimension` — filter by AI readiness dimension
+- `min_confidence` — minimum evidence confidence threshold
+- `top_k` — number of results
 
 ---
 
-### 4️⃣ Vᴿ – Idiosyncratic AI Readiness
+### 4️⃣ HyDE Query Enhancement
 
-- Weighted dimension aggregation  
-- Coefficient of Variation (CV) penalty:
+HyDE (Hypothetical Document Embedding) improves retrieval by:
 
-Penalty = 1 − 0.25 × CV  
+1. Taking the original query
+2. Generating a hypothetical answer with LLM
+3. Embedding the hypothetical answer
+4. Using it to retrieve real evidence
 
-Encourages balanced capability development.
-
-Includes structured audit logging for traceability.
-
----
-
-### 5️⃣ Position Factor (Pᶠ)
-
-PF = 0.6 × VR_component + 0.4 × MarketCap_component  
-
-Bounded to [-1,1]
-
-Captures sector-relative AI standing.
+Result: better semantic matching for complex PE questions.
 
 ---
 
-### 6️⃣ Hᴿ Adjustment
+### 5️⃣ Score Justification Generator
 
-Hᴿ = HR_base × (1 + δ × PF)
+For any company + dimension combination, generates:
 
-δ = 0.15  
-
-Leaders are amplified; laggards are penalized.
-
----
-
-### 7️⃣ Synergy Component
-
-Synergy = (Vᴿ × Hᴿ / 100) × Alignment × TimingFactor  
-
-Models interaction between readiness and sector position.
+- Score and rubric level (1-5)
+- 95% confidence interval
+- Evidence strength (strong/moderate/weak)
+- Rubric criteria matched
+- Supporting evidence items with citations
+- Gaps preventing a higher score
+- LLM-generated IC-ready summary (150-200 words)
 
 ---
 
-### 8️⃣ SEM-Based Confidence Interval
+### 6️⃣ IC Meeting Prep Workflow
 
-Implements:
+Generates a complete Investment Committee package:
 
-- Spearman-Brown reliability correction  
-- Standard Error of Measurement (SEM)  
+- Portfolio Org-AI-R score
+- Executive summary
+- Key strengths (top 3)
+- Key gaps (top 3)
+- Risk factors
+- Recommendation (PROCEED / PROCEED WITH CAUTION / DO NOT PROCEED)
+- Dimension-by-dimension justifications
 
-Outputs:
+---
 
-- Lower bound  
-- Upper bound  
-- Confidence score  
+### 7️⃣ On-Demand Company Onboarding (NEW)
 
-Bounds clipped to [0,100].
+`POST /api/v1/pipeline/onboard/{ticker}`
 
-Ensures statistical defensibility.
+Automatically onboards any US-listed company in 5 steps:
+
+1. Register in Snowflake (dynamic industry mapping)
+2. Collect SEC 10-K filings via EDGAR
+3. Collect signals (jobs, patents, board governance, leadership)
+4. Run CS3 scoring pipeline
+5. Index evidence into ChromaDB
+
+Works for **any** US-listed ticker — not just the original 5.
+
+---
+
+### 8️⃣ Dynamic Signal Collection (NEW)
+
+**Board Governance** — dynamic CIK lookup via SEC official ticker map for any company
+
+**Patent Signals** — dynamic USPTO name resolution via SEC EDGAR + USPTO assignee API
+
+**Leadership Signals** — 3-source enrichment:
+- SEC DEF 14A proxy statements (board governance)
+- Wikidata — current C-suite and board members for any public company
+- Wikipedia — AI background detection from executive articles
+
+---
+
+## 📡 API Endpoints
+
+### Search
+```
+GET /api/v1/search
+  ?query=AI talent hiring machine learning
+  &company_id=NVDA
+  &dimension=talent
+  &top_k=10
+  &min_confidence=0.8
+```
+
+### Score Justification
+```
+GET /api/v1/justification/{ticker}/{dimension}
+```
+
+### IC Meeting Prep
+```
+POST /api/v1/justification/{ticker}/ic-prep
+Body: { "focus_dimensions": ["data_infrastructure", "talent"] }
+```
+
+### On-Demand Onboarding
+```
+POST /api/v1/pipeline/onboard/{ticker}?sector=Technology
+GET  /api/v1/pipeline/onboard/{ticker}/status
+GET  /api/v1/pipeline/supported-sectors
+```
 
 ---
 
 ## 🗄 Infrastructure & Persistence
 
-### Database
-- Snowflake (primary analytics storage)  
-- CS3 schema includes scoring results tables  
+### Vector Database
+- ChromaDB (local, `./chroma_data`)
+- Dense embeddings: `sentence-transformers/all-MiniLM-L6-v2`
+- BM25 sparse index in-memory
 
-### Caching
-- Redis for performance optimization  
+### Database
+- Snowflake (primary analytics storage)
 
 ### Document Storage
-- AWS S3 for SEC filings & raw documents  
+- AWS S3 for SEC filings & raw documents
 
 ### Orchestration
-- Airflow DAG (`org_air_scoring_dag.py`)  
-- Supports batch scoring automation  
+- Airflow DAG (`evidence_indexing_dag.py`)
+- Batch evidence indexing automation
 
 ### Containerization
-- Dockerfile  
-- docker-compose.yml  
+- Dockerfile + docker-compose.yml
 
 ---
 
 ## 📂 Project Structure
 
 ```bash
-PE_ORGAIR_CASESTUDY3/
+PE_ORGAIR_CASESTUDY4/
 │
-├── app/                        # FastAPI application layer
-│   ├── core/
-│   ├── database/
-│   ├── models/
+├── app/                          # FastAPI application layer
 │   ├── pipelines/
+│   │   ├── board_collector.py    # Dynamic CIK lookup (any company)
+│   │   ├── patent_signals.py     # Dynamic USPTO name lookup
+│   │   ├── leadership_signals.py # Wikidata + Wikipedia enrichment
+│   │   └── ...
 │   ├── routers/
-│   ├── services/
-│   └── streamlit_app/
+│   │   ├── search.py             # Evidence search endpoint
+│   │   ├── justification.py      # Score justification endpoint
+│   │   ├── pipeline.py           # On-demand onboarding (NEW)
+│   │   └── signals.py            # Signal collection
+│   └── services/
 │
 ├── src/
-│   ├── scoring/                # Org-AI-R scoring engine
-│   └── pipelines/
+│   ├── services/
+│   │   ├── integration/          # CS1/CS2/CS3 clients
+│   │   ├── retrieval/
+│   │   │   ├── hybrid.py         # Dense + BM25 + RRF fusion
+│   │   │   └── hyde.py           # HyDE query enhancement
+│   │   ├── search/
+│   │   │   └── vector_store.py   # ChromaDB wrapper
+│   │   └── justification/
+│   │       └── generator.py      # Score justification LLM
 │
-├── dags/                       # Airflow DAG
-├── scripts/                    # Operational scripts
-├── tests/                      # Unit + property tests
-├── results/                    # Sample scoring outputs
-├── docs/                       # Architecture diagrams
+├── dags/
+│   └── evidence_indexing_dag.py  # Airflow batch indexing
+│
+├── scripts/
+│   └── index_evidence.py         # Dynamic evidence indexing (any ticker)
+│
+├── streamlit_app/
+│   ├── app.py                    # Full dashboard + CS4 pages
+│   └── api_client.py             # API client with CS4 methods
+│
+├── tests/                        # 81 passing tests
+├── results/                      # Scoring outputs (NVDA, JPM, WMT, GE, DG)
 │
 ├── Dockerfile
 ├── docker-compose.yml
@@ -315,23 +334,52 @@ PE_ORGAIR_CASESTUDY3/
 └── README.md
 ```
 
+---
+
 ## ▶️ How to Run
 
 ### Install Dependencies
 
 ```bash
 poetry install
+poetry run scrapling install  # install browser for stealth scraping
 ```
 
----
+### Environment Variables
+
+```bash
+# Required
+ANTHROPIC_API_KEY=...
+SNOWFLAKE_ACCOUNT=...
+SNOWFLAKE_USER=...
+SNOWFLAKE_PASSWORD=...
+SNOWFLAKE_DATABASE=...
+SNOWFLAKE_WAREHOUSE=...
+USPTO_API_KEY=...
+
+# Optional
+OPENAI_API_KEY=...
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+REDIS_URL=...
+```
+
+### Index Evidence
+
+```bash
+# Index original 5 companies
+poetry run python scripts/index_evidence.py
+
+# Index any new company
+poetry run python scripts/index_evidence.py AAPL
+poetry run python scripts/index_evidence.py MSFT GOOGL TSLA
+```
 
 ### Run Tests
 
 ```bash
-poetry run pytest
+poetry run pytest  # 81 tests, 1 skipped
 ```
-
----
 
 ### Run the Application
 
@@ -341,123 +389,64 @@ poetry run pytest
 poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-FastAPI will be available at:
-- http://localhost:8000  
-- Swagger Docs: http://localhost:8000/docs  
-
----
+API available at:
+- http://localhost:8000
+- Swagger Docs: http://localhost:8000/docs
 
 #### Start Streamlit Dashboard
 
 ```bash
-poetry run streamlit run app/streamlit_app/app.py
+poetry run streamlit run streamlit_app/app.py
 ```
 
-Streamlit will be available at:
-- http://localhost:8501  
+Streamlit available at:
+- http://localhost:8501
 
----
-
-### Run Airflow (Orchestration Layer)
-
+#### Run Airflow
 
 ```bash
 docker-compose up --build
 ```
 
-Airflow will be available at:
-- http://localhost:8081  
-
-Airflow DAG:
-- `org_air_scoring_dag.py`
-
-Airflow enables:
-- Scheduled batch scoring
-- Automated pipeline orchestration
-- Persistent scoring runs across companies
-
----
-
-This executes the complete Org-AI-R scoring pipeline:
-- Evidence retrieval  
-- Dimension scoring  
-- Vᴿ calculation  
-- Position factor adjustment  
-- Synergy modeling  
-- Final Org-AI-R computation  
-- SEM-based confidence interval estimation  
-- Snowflake persistence  
-
----
-
-### Service Ports Summary
-
-- FastAPI → http://localhost:8000  
-- Swagger Docs → http://localhost:8000/docs  
-- Streamlit → http://localhost:8501  
-- Airflow → http://localhost:8081  
-
-
-### Score a Company
-
-
-poetry run python scripts/run_scoring.py --ticker NVDA
-
-
----
-
-### Pipeline Execution:
-
-- Evidence retrieval  
-- Dimension scoring  
-- Vᴿ calculation  
-- Position adjustment  
-- Synergy modeling  
-- Org-AI-R computation  
-- Confidence interval estimation  
-- Snowflake persistence  
+Airflow available at:
+- http://localhost:8081
 
 ---
 
 ## 🧪 Testing & Validation
 
-Implemented:
-
-- Unit tests  
-- Property-based testing (Hypothesis)  
-- Bounds validation (0–100)  
-- Deterministic scoring checks  
-- Portfolio validation across 5 companies  
+- 81 unit and integration tests passing
+- All 3 CS4 endpoints verified (Search, Justification, IC Prep)
+- All 5 original tickers × 7 dimensions = 35 combinations tested
+- New companies tested: MSFT, AMZN, JNJ, AAPL
 
 ---
 
 ## 👥 Team Contributions
 
 ### Ayush Fulsundar
-
-- Evidence Mapper  
-- Rubric Scorer (7 dimensions)  
-- Board Composition Analyzer  
-- Talent Concentration Calculator  
-- Decimal utilities  
-- VRCalculator with audit logging  
-- Property-based tests  
-- Integration Service (pipeline orchestration)  
+- CS1/CS2/CS3 Integration clients
+- Hybrid retrieval (Dense + BM25 + RRF)
+- HyDE query enhancement
+- Vector store (ChromaDB)
+- Evidence indexing pipeline
+- Streamlit CS4 pages (Evidence Search, Score Justification)
 
 ### Ishaan Samel
-
-- Glassdoor Culture Collector  
-- Position Factor Calculator  
-- HRCalculator (δ = 0.15)  
-- SynergyCalculator  
-- SEM-based Confidence Calculator  
-- OrgAIRCalculator  
-- Integration Service (pipeline orchestration)
-- Streamlit  
+- Score Justification Generator
+- IC Meeting Prep Workflow
+- Analyst Notes Collector
+- LiteLLM multi-provider router
+- Justification API endpoint
+- Airflow evidence indexing DAG
 
 ### Vaishnavi Srinivas
-
-- External signals data collection  
+- On-demand company onboarding pipeline (`pipeline.py`)
+- Dynamic CIK lookup for board governance (any company)
+- Dynamic USPTO name resolution for patents (any company)
+- Wikidata + Wikipedia leadership enrichment (any company)
+- Streamlit "Onboard New Company" tab + dynamic dropdowns
+- Dynamic evidence indexing (`scripts/index_evidence.py`)
 
 ---
 
@@ -465,8 +454,8 @@ Implemented:
 
 AI tools used during development:
 
-- ChatGPT — debugging, architectural refinement, documentation structuring, test case validation  
-- Claude — debugging support and structured test refinement  
+- ChatGPT — debugging, architectural refinement, documentation structuring
+- Claude — debugging support, structured test refinement, implementation assistance
 
 ---
 
