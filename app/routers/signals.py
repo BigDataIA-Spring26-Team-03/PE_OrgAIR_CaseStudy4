@@ -579,15 +579,111 @@ async def run_comprehensive_collection_task(
             logger.exception("Patent collection failed", error=str(e))
 
         # ========================================
-        # 4. LEADERSHIP (REAL: from board_governance_signals)
+        # 4. LEADERSHIP (board + Wikidata + Wikipedia + senior jobs)
         # ========================================
         try:
-            leadership_signal = _leadership_signal_from_latest_board(db, company_id=company_id, ticker=ticker)
-            if leadership_signal:
-                all_signals.append(leadership_signal)
-                logger.info("✅ Leadership aggregated (from board)", score=leadership_signal.score)
+            # Primary: board governance from SEC DEF 14A
+            board_signal = _leadership_signal_from_latest_board(db, company_id=company_id, ticker=ticker)
+            board_score = board_signal.score if board_signal else 0
+
+            # Secondary: senior AI job postings score
+            senior_job_score = 0
+            senior_count = 0
+            try:
+                senior_count = sum(
+                    1 for s in job_signals
+                    if any(t.lower() in (s.title or "").lower() for t in ["director", "vp", "chief", "head of"])
+                )
+                senior_job_score = min(senior_count * 10, 40)
+                logger.info("Senior job postings for leadership", count=senior_count, score=senior_job_score)
+            except Exception:
+                pass
+
+            if board_signal:
+                # Enrich board score with Wikidata when score is low
+                wiki_boost = 0
+                if board_score < 50:
+                    try:
+                        from app.pipelines.leadership_signals import (
+                            collect_leadership_profiles_from_web,
+                            calculate_leadership_score_0_1,
+                        )
+                        web_profiles = collect_leadership_profiles_from_web(company_name, company_id)
+                        if web_profiles:
+                            wiki_score = int(round(calculate_leadership_score_0_1(web_profiles) * 100))
+                            wiki_boost = wiki_score
+                            logger.info("✅ Wikidata enrichment", wiki_score=wiki_score)
+                    except Exception as wiki_err:
+                        logger.debug(f"Wikidata enrichment skipped: {wiki_err}")
+
+                # Only blend if it improves the score
+                if wiki_boost > 0 and senior_job_score > 0:
+                    blended = int(round(0.5 * board_score + 0.3 * wiki_boost + 0.2 * senior_job_score))
+                    combined_score = max(board_score, blended)
+                elif wiki_boost > 0:
+                    blended = int(round(0.6 * board_score + 0.4 * wiki_boost))
+                    combined_score = max(board_score, blended)
+                elif senior_job_score > 0:
+                    blended = int(round(0.7 * board_score + 0.3 * senior_job_score))
+                    combined_score = max(board_score, blended)
+                else:
+                    combined_score = board_score
+
+                board_signal = ExternalSignal(
+                    id=board_signal.id,
+                    company_id=board_signal.company_id,
+                    category=board_signal.category,
+                    source=board_signal.source,
+                    signal_date=board_signal.signal_date,
+                    score=combined_score,
+                    title=board_signal.title,
+                    url=board_signal.url,
+                    metadata_json=board_signal.metadata_json,
+                )
+                all_signals.append(board_signal)
+                logger.info("✅ Leadership aggregated (board+wiki+jobs)", board=board_score, wiki=wiki_boost, jobs=senior_job_score, combined=combined_score)
+
             else:
-                logger.warning("⚠️ No board governance signal found; leadership score will be 0", ticker=ticker)
+                # No board data — use Wikidata + Wikipedia as primary source
+                try:
+                    from app.pipelines.leadership_signals import (
+                        collect_leadership_profiles_from_web,
+                        leadership_profiles_to_aggregated_signal,
+                    )
+                    web_profiles = collect_leadership_profiles_from_web(company_name, company_id)
+                    if web_profiles:
+                        web_signal = leadership_profiles_to_aggregated_signal(company_id, web_profiles)
+                        if senior_job_score > 0:
+                            blended = int(round(0.7 * web_signal.score + 0.3 * senior_job_score))
+                            web_signal = ExternalSignal(
+                                id=web_signal.id, company_id=web_signal.company_id,
+                                category=web_signal.category, source=web_signal.source,
+                                signal_date=web_signal.signal_date, score=blended,
+                                title=web_signal.title, url=web_signal.url,
+                                metadata_json=web_signal.metadata_json,
+                            )
+                        all_signals.append(web_signal)
+                        logger.info("✅ Leadership from Wikidata+Wikipedia", score=web_signal.score, profiles=len(web_profiles))
+                    elif senior_job_score > 0:
+                        import json as _json
+                        leadership_signal = ExternalSignal(
+                            id=f"{company_id}-leadership-jobs",
+                            company_id=company_id,
+                            category=SignalCategory.LEADERSHIP_SIGNALS,
+                            source=SignalSource.external,
+                            signal_date=datetime.utcnow(),
+                            score=senior_job_score,
+                            title=f"Leadership signals from {senior_count} senior job postings",
+                            url=None,
+                            metadata_json=_json.dumps({"source": "job_postings", "senior_count": senior_count}),
+                        )
+                        all_signals.append(leadership_signal)
+                        logger.info("✅ Leadership from senior jobs only", score=senior_job_score)
+                    else:
+                        logger.warning("⚠️ No leadership signals found", ticker=ticker)
+                except Exception as web_err:
+                    logger.warning(f"⚠️ Web leadership collection failed: {web_err}")
+
         except Exception as e:
             logger.exception("❌ Leadership pipeline failed", error=str(e))
 
@@ -634,7 +730,8 @@ async def run_patent_only_task(company_id: str, company_name: str, ticker: str, 
     try:
         db = SnowflakeService()
 
-        uspto_name = COMPANY_USPTO_NAMES.get(ticker)
+        from app.pipelines.patent_signals import get_uspto_name
+        uspto_name = get_uspto_name(ticker, company_name)
         if not uspto_name:
             logger.error("No USPTO mapping", ticker=ticker)
             return
