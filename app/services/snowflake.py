@@ -346,24 +346,17 @@ class SnowflakeService:
         rows = self.execute_query(query, {"company_id": company_id})
         return rows[0]["domain_url"] if rows else None
 
-    TICKER_DOMAIN_FALLBACK = {
-        "NVDA": "nvidia.com", "JPM": "jpmorganchase.com", "WMT": "walmart.com",
-        "GE": "ge.com", "DG": "dollargeneral.com", "TSLA": "tesla.com",
-        "MSFT": "microsoft.com", "AAPL": "apple.com", "GOOGL": "google.com",
-    }
-
     def get_domain_for_company(self, company_id: str, ticker: str) -> Optional[str]:
-        """Get domain: company_domains → fallback map → yfinance."""
+        """Get domain: company_domains → yfinance (dynamic, no hardcoded map)."""
         domain = self.get_primary_domain_by_company_id(company_id)
         if domain:
             return self._normalize_domain(domain)
         t = (ticker or "").strip().upper()
-        if t and t in self.TICKER_DOMAIN_FALLBACK:
-            return self.TICKER_DOMAIN_FALLBACK[t]
+        if not t:
+            return None
         try:
             import yfinance as yf
-            stock = yf.Ticker(t)
-            website = (stock.info or {}).get("website")
+            website = (yf.Ticker(t).info or {}).get("website")
             if website:
                 return self._normalize_domain(website)
         except Exception:

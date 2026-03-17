@@ -4,14 +4,15 @@ Complete API Client for PE Org-AI-R Platform
 Supports CS1 (Platform Foundation) + CS2 (Evidence Collection)
 """
 
+import os
 import requests
 from typing import Optional, Dict, List
 
 class APIClient:
     """Client for communicating with FastAPI backend"""
     
-    def __init__(self, base_url: str = "http://localhost:8000"):
-        self.base_url = base_url
+    def __init__(self, base_url: str | None = None):
+        self.base_url = (base_url or os.getenv("API_BASE_URL", "http://localhost:8000")).rstrip("/")
     
     def _handle_response(self, response):
         """Handle API response and errors"""

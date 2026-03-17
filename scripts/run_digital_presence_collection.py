@@ -1,14 +1,14 @@
 """
-Runner script: Digital Presence Collection for all 5 portfolio companies.
+Runner script: Digital Presence Collection for all companies in DB.
 
 Usage (from project root):
-    python scripts/run_digital_presence_collection.py
+    poetry run python scripts/run_digital_presence_collection.py
 
 What it does:
-    1. Connects to Snowflake and fetches company_id + domain for each ticker
-    2. Deletes old digital_presence signals for clean re-run
-    3. Scrapes each company's website (multi-page) via updated tech_signals.py
-    4. Inserts new ExternalSignal rows into Snowflake
+    1. Fetches all companies from Snowflake; resolves domain via company_domains or yfinance
+    2. Deletes old digital_presence signals per company
+    3. Scrapes each company's website (multi-page) for tech stack evidence
+    4. Inserts ExternalSignal rows into Snowflake
     5. Prints a summary table of signal counts and scores
 """
 
@@ -25,41 +25,30 @@ sys.path.insert(0, str(ROOT))
 from app.pipelines.tech_signals import scrape_tech_signal_inputs, tech_inputs_to_signals
 from app.services.snowflake import db
 
-# ── Config ────────────────────────────────────────────────────────────────────
-
-TICKERS = ["NVDA", "JPM", "WMT", "GE", "DG"]
-
-# Domain map — fallback if not in company_domains table
-DOMAIN_FALLBACK = {
-    "NVDA": "nvidia.com",
-    "JPM":  "jpmorganchase.com",
-    "WMT":  "walmart.com",
-    "GE":   "ge.com",
-    "DG":   "dollargeneral.com",
-}
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def get_company_info(ticker: str) -> dict:
-    """Fetch company_id and domain from Snowflake."""
+def get_all_companies_with_domains() -> list[dict]:
+    """Fetch all companies from Snowflake; resolve domain via company_domains or yfinance."""
     rows = db.execute_query(
-        "SELECT id, ticker FROM companies WHERE ticker = %(ticker)s",
-        {"ticker": ticker}
+        """
+        SELECT id, ticker, name
+        FROM companies
+        WHERE is_deleted = FALSE
+        ORDER BY ticker
+        """
     )
-    if not rows:
-        raise ValueError(f"Company {ticker} not found in Snowflake. Add it first.")
-
-    company_id = rows[0].get("id")
-
-    # Try company_domains table first
-    domain = db.get_primary_domain_by_company_id(company_id)
-
-    # Fallback to hardcoded map
-    if not domain:
-        domain = DOMAIN_FALLBACK.get(ticker)
-        print(f"  [WARN] No domain in DB for {ticker}, using fallback: {domain}")
-
-    return {"company_id": company_id, "ticker": ticker, "domain": domain}
+    out = []
+    for r in rows:
+        company_id = r.get("id")
+        ticker = (r.get("ticker") or "").strip().upper()
+        if not company_id or not ticker:
+            continue
+        domain = db.get_domain_for_company(company_id=company_id, ticker=ticker)
+        if domain:
+            out.append({"company_id": company_id, "ticker": ticker, "domain": domain})
+        else:
+            print(f"  [SKIP] {ticker}: no domain (company_domains or yfinance)")
+    return out
 
 
 def delete_old_signals(company_id: str, ticker: str) -> int:
@@ -129,12 +118,15 @@ def main():
     print("  Digital Presence Collection — OrgAIR Pipeline")
     print("="*60)
 
+    companies = get_all_companies_with_domains()
+    print(f"  Found {len(companies)} companies with resolvable domains")
+
     summaries = []
     errors    = []
 
-    for ticker in TICKERS:
+    for info in companies:
+        ticker = info["ticker"]
         try:
-            info    = get_company_info(ticker)
             summary = collect_and_store(info)
             summaries.append(summary)
         except Exception as e:
@@ -172,8 +164,7 @@ def main():
            ROUND(MAX(es.normalized_score), 2) as max_score
     FROM external_signals es
     JOIN companies c ON es.company_id = c.id
-    WHERE c.ticker IN ('NVDA','JPM','WMT','GE','DG')
-      AND es.category = 'digital_presence'
+    WHERE es.category = 'digital_presence'
     GROUP BY c.ticker
     ORDER BY avg_score DESC;
     """)
