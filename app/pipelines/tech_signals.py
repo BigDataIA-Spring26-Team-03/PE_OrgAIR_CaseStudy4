@@ -112,6 +112,21 @@ COMPANY_SCAN_OVERRIDES: Dict[str, List[str]] = {
         "/careers",
         "/technology",
     ],
+    "TSLA": [
+        "",
+        "/about",
+        "/careers",
+        "/energy",
+        "/ai",
+        "/supercharger",
+    ],
+    "MSFT": [
+        "",
+        "/about",
+        "/careers",
+        "/en-us/research",
+        "/azure",
+    ],
 }
 
 
