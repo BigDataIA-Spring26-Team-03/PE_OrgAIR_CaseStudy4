@@ -19,7 +19,9 @@
 | Component | Link |
 |-----------|------|
 | Demo Video | [Demo Video](https://youtu.be/ZU32gMl1m3g) |
-| Interactive Codelab | [CS4 RAG & Search Codelab](https://codelabs-preview.appspot.com/?file_id=1vbScSJyPROzPjuzx6h-lVBne2yIizObxuDUvmVDJmBI#12) |
+| Interactive Codelab | [CS4 RAG & Search Codelab](https://codelabs-preview.appspot.com/?file_id=1vbScSJyPROzPjuzx6h-lVBne2yIizObxuDUvmVDJmBI#12) 
+| Deployed Fast API Link http://34.60.223.69:8000/docs |
+| Deployed App Link http://34.60.223.69:8501|
 
 ---
 
