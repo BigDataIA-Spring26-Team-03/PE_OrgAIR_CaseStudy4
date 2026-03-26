@@ -1,6 +1,6 @@
 # PE Org-AI-R Platform
-## Case Study 5 — Agentic Portfolio Intelligence
-### "Claude, prepare the IC meeting for NVIDIA."
+## Case Study 4 — RAG & Search Engine
+### From Scored Evidence to Cited Investment Justifications
 
 **Course:** Big Data and Intelligent Analytics
 **Instructor:** Professor Sri Krishnamurthy
@@ -18,299 +18,356 @@
 
 | Component | Link |
 |-----------|------|
-| Demo Video | [Demo Video](#) |
-| Interactive Codelab | [CS5 Agentic Portfolio Codelab](https://codelabs-preview.appspot.com/?file_id=1qHfY9Cs6SipX6US_RT8QELEkXO79qfaO5GIZLKRGJLc#0) |
-| Deployed FastAPI Link | http://34.60.223.69:8000/docs |
-| Deployed App Link | http://34.60.223.69:8501 |
+| Demo Video | [Demo Video](https://youtu.be/ZU32gMl1m3g) |
+| Interactive Codelab | [CS4 RAG & Search Codelab](https://codelabs-preview.appspot.com/?file_id=1vbScSJyPROzPjuzx6h-lVBne2yIizObxuDUvmVDJmBI#12) 
+| Deployed Fast API Link | http://34.60.223.69:8000/docs |
+| Deployed App Link | http://34.60.223.69:8501|
 
 ---
 
 ## 📌 Executive Summary
 
-Case Study 5 is the capstone of the PE Org-AI-R platform, transforming the CS1-CS4 evidence and scoring pipeline into a fully agentic investment intelligence system.
+Case Study 4 implements the RAG (Retrieval-Augmented Generation) & Search layer of the PE Org-AI-R platform.
 
 Building on:
 
 - Case Study 1 → Platform Foundation (FastAPI, Snowflake, Redis, Docker)
 - Case Study 2 → Evidence Collection & Signal Extraction
 - Case Study 3 → Risk-adjusted, sector-calibrated scoring engine
-- Case Study 4 → RAG-powered search and score justification
-- **Case Study 5 → Agentic orchestration via MCP + LangGraph**
+- Case Study 4 → RAG-powered search, score justification, and IC meeting preparation
 
-The CS5 layer answers the PE firm's core workflow question:
+The CS4 layer answers the critical PE question:
 
-> *"Claude, prepare the IC meeting for NVIDIA."*
+> *"Why did this company score 72 on Data Infrastructure?"*
 
-It wraps all CS1-CS4 APIs as MCP tools and orchestrates them with LangGraph specialist agents to produce full agentic due diligence workflows, IC meeting packages, and portfolio-level Fund-AI-R analytics — all backed by real data, zero mock data.
+It transforms raw Org-AI-R scores into **cited, evidence-backed investment justifications** suitable for IC (Investment Committee) presentations.
 
 Key capabilities:
 
-- MCP Server exposing 6 CS1-CS4 tools to any LLM agent
-- LangGraph multi-agent supervisor with SEC, Scoring, Evidence, and Value Creation specialists
-- Human-in-the-Loop (HITL) approval gates for scores outside normal range
-- Assessment History Tracking with trend analysis
-- Fund-AI-R Calculator using EV-weighted aggregation
-- Prometheus metrics for observability
-- Portfolio Dashboard via Streamlit
+- Hybrid semantic + keyword evidence search (Dense + BM25 + RRF fusion)
+- HyDE query enhancement for better retrieval
+- Score justification generation with cited evidence
+- IC Meeting Prep package generation across all 7 dimensions
+- Analyst Notes Collector for post-LOI due diligence evidence
+- On-demand company onboarding for any US-listed ticker
+- Dynamic leadership signals via Wikidata + Wikipedia enrichment
 
 ---
 
 ## 🏗 System Architecture Overview
 
-| Architecture Diagram | [Draw.io Diagram](https://viewer.diagrams.net/?tags=%7B%7D&lightbox=1&highlight=0000ff&edit=_blank&layers=1&nav=1&title=CS5&dark=auto#R%3Cmxfile%3E%3Cdiagram%20name%3D%22Page-1%22%20id%3D%228ICr4UUGzuBkgfGW4hdd%22%3E5Vxbc9q6Fv41zHQ%2FtOMLNvAIhKQ5k7ZMyLRnPzHCFkY7xmYkAcn59XtJFr7IJhBjSJiTThNblo20vnX5lrRMyx4uX%2B4oWi1%2BxD4OW5bhv7Tsm5ZlmWanB39Ey2vS0rFUQ0CJrzplDRPyP6waDdW6Jj5mhY48jkNOVsVGL44i7PFCG6I03ha7zeOw%2BKkrFOBSw8RDYbn1D%2FH5QrW6Tju78B2TYLH7aNNVE1yiXW81FbZAfrzNNdmjlj2kccyTo%2BXLEIdCejvBJPfd7rmajoziiB9zAyccZlW6ST2H8dfdnDl%2BgWuDBV%2BG0GDCIeM0fsbDOIwptERxBD0HcxKGWhMKSRDBqQdPx9A%2B2GDKCUizry4sie%2BLjxlsF4TjyQp54jO3oDvQRuN15GMxWkM8Po640gcrPVeDFGNKhr1B4VoNezyC8180%2BNq%2F%2F%2FrYsvtwNkQMZmxM%2BBr0zzIc%2BN8aWa2u0eoBfkY%2FgHESD47GMeWgGySG43sYewjjxZGnxCVmgV9y4lICvsPxEnMqHr3I6UBbAb7NKYxlqEb1mPT8dXeudFbpa5A%2BOkMUDhSo1QCvGcj8CHxBEVficPkSCKP9Ng%2FjrbdAlH9jHH5PLQ3clmX7CHfnXkkT4IrrdfFsXsTLtI7Gqx%2Bh8JXxWnJ2K%2BSsibnjFMXcbUDMIAKMliHh75E1BeeEomCv7ueMTRe9g7t%2Bu0r0XWtmu64m%2BkpRT7IhGzeILWYxon7LckNh5zNQGjfg8r7DLXlL%2BQWAbQjelnvdgiUndigU22h1hsnB75YzEm0bBr%2B%2BqxNwt1y4i9JTRhtw%2FtIKjRvCViESGjCMlyvwNlE9nTHNstLY7QO2aTagNXMExrUi16MztzDg%2FvgeGgfIe8bRG%2Frik02VwtzqjdBU6NoQfmaviJ9r6fiZp%2BO3ouKeBV6zy0A4n88tr9Lj%2Bu7MdY6CcJwbs%2FEDZkw8OHLhGaaIqExYrwfsyrqNZ%2BIEzQj4iFchiqTzt9Vrrn%2FucOmtpoKHTSG2hwwOOQpzl5EIrFMSbWIwbRJH5R4gi3CKViBVGG96uYZCpMaaU4g0MqQ0VLNos4lwK2SwwMh%2FX9B9j0bk8LUrIqpOrni8qtAjR%2FxTd%2Bfak5%2FKiC5%2FqvTpx3As3PXo8bf023kqBcIAeQklwlRqTUNQmrpzNjXjtpsI6byCTDcOoVEl0qdfvx5yZgFoeusQcTyNaTBFhE6ZF1NcbYSTeE3F50qmO7FzVx4xX9OIJZdSSmwNswg8zOJvDaS6FUB1nTeDaNt2GsDJ%2BiQ4BZhPPSAiKHqd4pSlHAbJ2gdS9hDDW6yjZ3YuXNqGU8Sl3QQu9gfjohETCD%2BYCiv6Z804mZMkCh1Db4twtT%2BA4RyBoU5w2u0mfGD7c2EI1OAf%2BJApnhHuoykBY%2FP4%2ByEEzTRCoCH12EUl3dTQ6FqaRTVBLrjzSTwdXUfTAK2mSCbqhB0ZigaJ8VT6OmBjX32Zy0FKF9XCpXcYFtOwNVwaiUDuJ8FFRKDVLhefsvVyiegesl4Ex9wHSy5nP4%2FbMq22jkgDlhIGZ2bhe%2Fj0ft5ck7fv4eclRXjo%2F7y7e%2ByPv0Nz%2F27082micXGZfTEZneq4vCokbaeUURWQdJuIQGy9Ehkpiy8F5Ry7e1LsTm9mGMdY5SQ35mL6KwDIZrQ3k36M11yk4MYM8y3GUQ6%2FtM%2BGoJbc4vCJ4DEilhnYD3A9kmhWpVldDd%2Behm%2B3Ad%2FJsDdFVwTtSCRJ%2FTTuJdsF1SgOxTJI4kYPpAbDGOCSm06is484UJtoTpFMyTLvLnpFSN4qRsGxt5gyjrznBmlMEfK2btKNQC6y16sCHQZMouBotA8n7E%2BUBAGmcsH7%2FulBCGcuZq51AzfAQFmEK3cGwpsK2AEC5%2BZsRq6nEW6vASeON9cEd26HYYf3wfyiYOtv5ZmXXBa3DsPdtXUDbwBukOU14f1bHgINplhBVQv3iqTo4ogfE8WN9hkgF0v314O48rl9tdUAh3dgsNV%2BfYzWTHIxuS%2Beu%2FAHEUHIjLmgecZivUSSp6XPzFKtxKsbO2hFDDXkTTvoBSJp99Hg%2Fummn%2BsP3Z2zRXjT0nbD3U4D6kAi%2Fn%2BWgN3%2FfBpBAvZ0%2F%2BsnXHjo%2F13aDcntrNVD067KwbRtzk4RzG4Ttr3yP%2Bf2ZqVp50sRboBIw59JIvg8VxMLHgO58j7IrUwZ6wjiNfZzPUGRMRh%2BEhZus7UVydEVonW3tipy6rTkZ8%2BGSa%2BJqoMFYRcqU2kC0D4D98uWMh4b32HosVzS0uLwE5XFCAankA4lXP2LbfjSi4K5GT3D%2F%2BsDAnKnAmKzCHFbC8e9JlaK55B0XA%2FE%2BcKgocqdCmsno99ft1KqwjYNFAQUBztWna6vCNrFZTHD7RweKPKuBi2zlCf1zgBbCCHzemB7kAGeLchKOFmImihkBdoDgwgTWwQPC7%2F%2FkGeywr5cuHocTZ5ynQdJ8ZnxRThcCk%2F6K71LPkcC%2FwW%2FpBcbQlULnz3zDP5W3HA9qB6oD0rKPRJkVJZkcBxiJZVs6eKN4qGGHGmpoMc9g0l67GxlICdV06bbQ29V0xY3dsbgViFZWUKfW1FVrXvQrLhPGV4Ub%2BchesZpyyMYb2NFCNaBCkvTaCIT8Zh1zfhZ%2BSiYrUvB00MYaRG%2FZG06QWoM%2BazcL1Dn%2FwF7TE%2BUsz0PjI51HhjPVk1yCRhtbTkgiYqjKCBRPi%2FJqrIUUrvS6OSsfm3WETy06%2Bq4NZE7euxsFSSXwK1QrtC%2Fk8kkol5%2BGegGRyzzkIMflpO5y8d6mX6FldmWHuycc5gZy1z%2B8aB5r8DygAna5162qd6cyYacVUzKrTYi1lqES2QlborSpHLXRazR1dw6rao70bhJu1xr3IRxLYCrIX92PWAN5YhvBgfsJ72Yq4DcgGuIaU2Iqt6%2B0uJWp30OiN4Xtj4WnP4fUTRSrBlGW9EkiQV8IoStvBXBpJhMzPzYWytjqoOOc9iAsmjUKDxYYSEKJwrgVOGlKqZEU%2FZWXQ5F8ZBdPIkpX8SBKMsYZa0D%2FEL4f%2BGq8c1RZ38XYg9HNMDqUwtvlJUFSDGwebIpjvokUVifVhS516ROEIS8tU%2BpLDLcdVjFRKmtevJYNORYke64O05eqKX%2BHZ1FFfvDQTKCDJJ0KsehZNdDSXs%2F8V1QlQEpvuVyCeVs15t24QW7q5u0U2%2FS%2BjtIJ867UEt5iWm79aat1XyeOOviDuYlpt2pN219q%2FXEeav1rktMuPtJJmxdasK9TzJh%2B1IT3i0xfPiM2xebcU1CmS4znzjVQgJ%2FkQnXpI3pwtCp2OZy4EuTQ9PSkxJTLcLso4ddfXFUu%2BF0fmjWJIjpOvmpCniqc6mFhKsn77v8cR8Qpc0i%2FY4GkKjJWU%2Bibz5iC%2FltOeVv6MnvApZxK36VwUU8R016ewrP%2B3jx1MtC9ffb7QPabdlv3vBe5YbT7Cupku7ZN3vZo38B%3C%2Fdiagram%3E%3C%2Fmxfile%3E#%7B%22pageId%22%3A%228ICr4UUGzuBkgfGW4hdd%22%7D) |
-|---|---|
-
+|  Architecture Diagram Link | [DrawIo](https://viewer.diagrams.net/?tags=%7B%7D&lightbox=1&highlight=0000ff&edit=_blank&layers=1&nav=1&dark=auto#R%3Cmxfile%3E%3Cdiagram%20name%3D%22Page-1%22%20id%3D%227lTkgS7lPNfq_iGpEu2w%22%3E1Vvbcts2EP0azbQPyvAu6VHRxXFrNx6rl7QvHoiERDgkwYKQZObrC%2FAuEIpkGopZZ%2ByQIEiB5yx2zy6ggTkLX24IiP177MFgYGjey8CcDwzD0Ayb%2Fcdb0rxlbGh5w5YgL2%2FS64YV%2BgaLxrLbDnkwOepIMQ4oio8bXRxF0KVHbYAQfDjutsHB8afGYAtbDSsXBO3Wv5BH%2FfItRnX7J4i2fvnJujPJr4Sg7Fy8SeIDDx8aTeZiYM4IxjQ%2FCl9mMODglbjk9y1PXK0GRmBEL7nBaN9QPCOhafm6FL6wax99GgasQWeHGxzRghZ9XJ4XN%2FDrIEDbiB277KmQsIb8mXsQ7IpnzlYWaxgsjMFYG0z48cOC%2FflMtsPp7fCRHa7ShMKQHUyJ6yPKeNwRWDwHEjamxnCLl7uBOISUpKyL38DfLMA%2B1FyNtKKtssniPC3PC2spLGVbPbkGkx0UeMqx9ZJLwE0OKAxABAVUTQmqGxQEMxxgkt1pbmz%2Bj7UnlOCvsLwS4ephjc75j4yJOaCAw413xGWTir8566TNVoZA0GLPZl3kQn4RBwEjBOGoEyG61mZE1yfHlAwnx5SMlFAimSElTw1SCN5FHvQK3A%2Fc%2FFYxcPnVA3NpEi6ynxYX7IqT%2FQjs6jIiVosZR3l%2BM2Xm77BbmbszP%2Bra8Ffuo1CAom3SCe6RBG1bsH9DsH9bBdhWf8G%2BCUCSeJjdWEPt7oLcx2gE7hE8dEPbOY%2B2JXgbU4lp2%2F1F%2Bw5FX6F3G2XeZcn%2B3rIxsEHU2D%2FjNR87TmhnM78AeHt8DeCd%2FgL%2FEQPi8eBK8EvagDv3NfMF50K3pp3wtu2zeI8cAW%2FjgwLH4iYXyZZ3j6zdYqNErehVY%2FkcwV1XsfONsII2rhXYbzFlz4Zjz5KZ8thYm5eZ8pqb8pObKw9MPsRNe%2B4E9ViCtCEAbap3GAzRdY9xjgFlg3pKmIIHQXIlmEeC%2FHCsa8Ds9hjmAAIPksRH8ZWhLt10qT1El6wGaq%2FHUG9LrXfKe9TCr6BCGfjjY%2FAd01YO%2FuHXxP8DkO2X5fqPgx%2BEu%2FAODsux9JKP36Hr84xTMdaC6x7q6g0dPDEQ2a%2BZPwp6rTpRW5BkefVpBvgzSimCCfXxFjNUFnVrgR9lFMOKSVMqNtqYERgAivbHo3zbVDdPv2qPtNdsZQ6OyxcrFxOWW%2FAUO9qiqFspSdclhqc5QjQTDE9F5YLhLhVn5tunNNTZpB7JpvTEGZngoikNi9rQUwjiGDaT6hHr6KEQRgnCkbrJPhKi2jWCmimVaT1BnOzWBLlPCbPqI7wDuM%2Bq7Xpp%2BzzkaC4I0JqAzhU7GQWi1V9FKptSDdcTDv58HJQFjU%2BPOcpMSgCmL5IGI0mmOIaVK2bjLl1RByZkxTxxMlwh8jHMpRKvJ0wkaQTJNh2U1WsXR5uyWl0RMWEw8ckwu2V%2Fflot7n%2FuxICsziTk545Y4FNS9TBhfxgQo3iLkeZKDvdRDR42iCkc1o53NN5RVRywTOeIg5EYExRwwPWfyX6LbPX1%2Bq9NVjf9Z7XwlmN2sf7Lbp0SAtJGhxijiCaNJz%2FwhhpiW8glrYmw2vi6%2FuwgH0HNRfUqF04RyYpDL8WpuPj5OL3JfJcDwji7Q1tBQHia1EWkTl4vUm01QcKSilTr7S7KA3C8caXFcHcM15tLggSzRbgtRZAWgPRIOM1WDNpltuy5zLMHN0CwsH8lQcI6ZsBWXwtgUEs1a08I8NM13%2BDB3RIlCO55FKjwn7MUAVYB%2FON9Fqrzk8fHpTISBK1kXEUrWVLV2hMWPqVzvtUCRj5g%2BijkA6xZ%2BHcHMxhRGBO8L64qgt4RZKqYJ6uBXipTewL98y6haIPc0gdtIZOtPF9oMHDHRnJ3d19LWUSz7ur8kDAFHO0qjkgqVnvCwy1f%2FQwhpHlBKCYwbjAAsldRULiQgS9UhMdX2ArAYN5cCfzNZmO4UvA9Z%2B3YF%2BVqgOnbNOGyMMIUNjNlvvw%2FvPt8WyRw%2FAkftE7IjyVr04LZ68L%2BoomSHM3ye4z8zCc4BHPuVRD79JcG9J4k%2Bnax%2BPO4i9UJXVMDPOox8LDeOpcUul6bPtw28L9Z%2FJ6hvwQxe5HlnmvRpHsKYEs8j7A3Q3T7uq5oc4b13GMmxAh8ngXhDjVkGJpQrBA2Jikig9crrKekkHCvL1eU3uxV9Qr4gugXdlX7YNtmcf537sttqzif8%2FfWypO0cfIACQu62a7heb0O3qx%2BlK%2Fz3sUPod490qwmNef7Fy72VP%2Bq0ivv%2F%2BZiSW4bG%2FBOtjHmwCq3jfJ13ts2WnuXz9iG2P%2BMbYyN69pGOcW%2BX0fr4MChc8KBjyZrTRMcuHFJnXlFCQRhgDg6c5D462LH48Ccjm1Nbzj3xv71srimDWbGIFui%2FEWIC9WFLFV4yBKEuvFzVH7Mb%2FAw4PvhwxhEqSrJZI6PQ7VoHY6CJGFi%2Fnmfft0%2F79Kn8Jd%2Fvmm79Z0zNLo5g3LWvcoV1NbDyan73GEcF2Q%2FQ0rTwhrAjuLB0ZdQfkRkuBTNjaTu2dMJswQJzVRPNkU0nn82Np1VorM29rYGOroWoxgG2X6KJa6mRbPDW%2FZUSSaHJe7pFvKJKqN%2B06bu9Xcsv7GS4IOYH7ppwBMqYp6iVVw9O7GscGoFQbrc0GK2Tu8qQvfZ2nOd73WgwJKkEuIuWb3ERuVqgrc2%2Fn8crCJ82ATga3O9s5oA9bTItm10mxIX8SHMCUsNH5dt%2FeoVH9O%2FVjzem63vPnjY3YWdl3dkm%2FTPkWCo2KQPnirX1EGydwjTHtNUVchqh9xqND8%2B5nIoOgqWbgvxZ6Ew3hOKH7on9SwUP2qDKjutvy2dZzr1d87NxX8%3D%3C%2Fdiagram%3E%3C%2Fmxfile%3E) |
 ```text
 +---------------------------+               +--------------------------------+
-|          User             |               |     Prometheus Metrics         |
-| (Private Equity Analyst)  |               |  services/observability/       |
+|          User             |               |       Airflow (8081)           |
+| (Private Equity Analyst)  |               | dags/evidence_indexing_dag.py  |
 +------------+--------------+               +---------------+----------------+
              |                                              |
-             | (IC prep, due diligence, portfolio)          | (observability)
+             | (search, justify, IC prep)                   | (scheduled indexing)
              v                                              v
 +---------------------------+               +--------------------------------+
 |    Streamlit (8501)       | <-----------> |        FastAPI (8000)          |
-| dashboard/app.py          |   REST calls  |   app.main:app + routers       |
+| streamlit_app/app.py      |   REST calls  |   app.main:app + routers       |
 +------------+--------------+               +---------------+----------------+
              |                                              |
              |                              +---------------+----------------+
-             |                              |       MCP Server Layer         |
+             |                              |     CS4 Service Layer          |
              |                              |--------------------------------|
-             |                              | mcp/server.py                  |
-             |                              |  Tools:                        |
-             |                              |   calculate_org_air_score      |
-             |                              |   get_company_evidence         |
-             |                              |   generate_justification       |
-             |                              |   project_ebitda_impact        |
-             |                              |   run_gap_analysis             |
-             |                              |   get_portfolio_summary        |
-             |                              |  Resources: parameters, sectors|
-             |                              |  Prompts: due_diligence, ic    |
+             |                              | src/services/search/           |
+             |                              |   vector_store.py              |
+             |                              | src/services/retrieval/        |
+             |                              |   hybrid.py (Dense+BM25+RRF)   |
+             |                              |   hyde.py (query enhancement)  |
+             |                              |   dimension_mapper.py          |
+             |                              | src/services/justification/    |
+             |                              |   generator.py                 |
+             |                              | src/services/workflows/        |
+             |                              |   ic_prep.py                   |
+             |                              | src/services/collection/       |
+             |                              |   analyst_notes.py             |
+             |                              | src/services/integration/      |
+             |                              |   cs1_client.py                |
+             |                              |   cs2_client.py                |
+             |                              |   cs3_client.py                |
              |                              +---------------+----------------+
              |                                              |
              v                                              v
 +---------------------------+               +--------------------------------+
-|   LangGraph Agents        |               |   Integration Layer            |
-|  agents/supervisor.py     |               |--------------------------------|
-|  agents/specialists.py    |               | services/integration/          |
-|  agents/state.py          |               |   portfolio_data_service.py    |
-|                           |               | services/tracking/             |
-|  Specialist Agents:       |               |   assessment_history.py        |
-|  - SECAnalysisAgent       |               | services/analytics/            |
-|  - ScoringAgent           |               |   fund_air.py                  |
-|  - EvidenceAgent          |               | services/observability/        |
-|  - ValueCreationAgent     |               |   metrics.py                   |
-|  HITL Approval Gate       |               +---------------+----------------+
-+---------------------------+                              |
-                                                           v
-                                       +-------------------+------------------+
-                                       |         CS1-CS4 Integration          |
-                                       |  services/cs1_client.py              |
-                                       |  services/cs2_client.py              |
-                                       |  services/cs3_client.py              |
-                                       |  services/cs4_client.py              |
-                                       +--------------------------------------+
+|    ChromaDB (local)       |               |         Snowflake DB           |
+|  chroma_data/             |               |   companies, signals,          |
+|  Dense vector index       |               |   assessments, dimension       |
+|  BM25 sparse index        |               |   scores, evidence             |
++---------------------------+               +--------------------------------+
+                                                           ^
                                                            |
-                                                           v
                                        +-------------------+------------------+
-                                       |         Snowflake DB + ChromaDB      |
-                                       |  companies, signals, assessments     |
-                                       |  dimension scores, evidence          |
-                                       |  Dense vector + BM25 index           |
+                                       |         Evidence Layer (CS2)         |
+                                       |  app/pipelines/ + app/routers/       |
+                                       |--------------------------------------|
+                                       | SEC EDGAR → S3 → parse → chunk      |
+                                       | board_collector.py (dynamic CIK)    |
+                                       | patent_signals.py (dynamic USPTO)   |
+                                       | leadership_signals.py (Wikidata)    |
+                                       | glassdoor_collector.py              |
+                                       | pipeline.py (on-demand onboarding)  |
                                        +--------------------------------------+
 
+Storage:
+- ChromaDB: dense vector index + BM25 sparse index for hybrid search
+- Snowflake: companies, signals, dimension scores, evidence metadata
+- AWS S3: raw/parsed SEC documents
+
 Ports:
-- FastAPI: 8000 | Streamlit: 8501 | MCP Server: stdio
+- FastAPI: 8000 | Streamlit: 8501 | Airflow: 8081
 ```
 
 ---
 
-## 🔍 CS5 Core Components
+## 🔍 CS4 Core Components
 
-### 1️⃣ MCP Server (Lab 9)
+### 1️⃣ Integration Layer
 
-Wraps all CS1-CS4 APIs as MCP tools that any LLM agent can invoke.
+Connects CS4 to all upstream case studies.
 
-**6 Tools exposed:**
-- `calculate_org_air_score` — CS3 scoring engine → Org-AI-R, V^R, H^R, dimension breakdown
-- `get_company_evidence` — CS2 evidence retrieval → filtered by dimension
-- `generate_justification` — CS4 RAG justification → score, level, evidence, gaps
-- `project_ebitda_impact` — EBITDA projection model v2.0 → conservative/base/optimistic scenarios
-- `run_gap_analysis` — CS3+CS4 gap analysis → 100-day improvement plan
-- `get_portfolio_summary` — CS1 portfolio → Fund-AI-R + company breakdown
-
-**2 Resources:**
-- `orgair://parameters/v2.0` — scoring parameters (alpha, beta, gamma values)
-- `orgair://sectors` — sector baselines and weights
-
-**2 Prompts:**
-- `due_diligence_assessment` — complete DD workflow template
-- `ic_meeting_prep` — IC package generation template
+**CS1 Client** — fetches company metadata (ticker, sector, market cap)
+**CS2 Client** — loads evidence chunks with source type, confidence, dimension
+**CS3 Client** — retrieves dimension scores, rubric criteria, level keywords
+**Dimension Mapper** — maps evidence sources to the 7 Org-AI-R dimensions
 
 ---
 
-### 2️⃣ Portfolio Data Service
+### 2️⃣ Multi-Provider LLM Router (LiteLLM)
 
-Unified integration layer between CS1-CS4 and the MCP server.
+Routes LLM calls across providers with fallback:
 
-- Loads portfolio companies from CS1
-- Fetches Org-AI-R scores from CS3 for each company
-- Retrieves evidence counts from CS2
-- Builds `PortfolioCompanyView` with delta tracking
+```
+Primary: Claude (Anthropic)
+Fallback: GPT-4 (OpenAI)
+```
 
----
-
-### 3️⃣ LangGraph Multi-Agent System (Lab 10)
-
-**4 Specialist Agents:**
-
-| Agent | Responsibility | CS Integration |
-|---|---|---|
-| SECAnalysisAgent | SEC filing analysis | CS2 evidence |
-| ScoringAgent | Org-AI-R calculation + HITL trigger | CS3 scoring |
-| EvidenceAgent | Dimension justifications | CS4 RAG |
-| ValueCreationAgent | EBITDA projection + gap analysis | CS3+CS4 |
-
-**Supervisor** routes between agents using LangGraph conditional edges.
-
-**HITL Approval Gates** trigger when:
-- Org-AI-R score > 85 or < 40
-- EBITDA projection > 5%
+Supports:
+- Score justification generation
+- IC meeting prep synthesis
+- Analyst note summarization
+- Evidence quality assessment
 
 ---
 
-### 4️⃣ Assessment History Tracking
+### 3️⃣ Hybrid Retrieval (Dense + BM25 + RRF)
 
-Stores point-in-time assessment snapshots for trend analysis.
+**Dense retrieval** — ChromaDB with sentence-transformers embeddings (semantic similarity)
 
-- `record_assessment()` — stores current CS3 scores to Snowflake
-- `get_history()` — retrieves snapshots filtered by date range
-- `calculate_trend()` — computes delta_30d, delta_90d, trend direction (improving/stable/declining)
+**BM25 sparse retrieval** — keyword-based exact matching
 
----
+**RRF Fusion** — Reciprocal Rank Fusion combines both rankings for best results
 
-### 5️⃣ Fund-AI-R Calculator
+```
+Final Score = 1/(k + rank_dense) + 1/(k + rank_bm25)
+```
 
-Aggregates company-level Org-AI-R into a portfolio-level metric.
-
-- EV-weighted Org-AI-R averaging
-- Sector HHI concentration metric
-- Quartile distribution across sector benchmarks
-- AI leaders (≥70) and laggards (<50) counts
-
----
-
-### 6️⃣ Prometheus Metrics
-
-Real-time observability for MCP tools and LangGraph agents.
-
-- `mcp_tool_calls_total` — per tool, per status
-- `mcp_tool_duration_seconds` — execution latency histogram
-- `agent_invocations_total` — per agent, per status
-- `hitl_approvals_total` — approval reason + decision
-- `cs_client_calls_total` — CS1-CS4 service call tracking
+Filters available:
+- `company_id` — filter by ticker
+- `dimension` — filter by AI readiness dimension
+- `min_confidence` — minimum evidence confidence threshold
+- `top_k` — number of results
 
 ---
 
-### 7️⃣ Bonus Extensions
+### 4️⃣ HyDE Query Enhancement
 
-| Extension | Points | Description |
-|---|---|---|
-| Mem0 Semantic Memory | +5 pts | Persistent agent memory across sessions |
-| Investment Tracker with ROI | +5 pts | Track portfolio ROI over time |
-| IC Memo Generator | +5 pts | Word document IC memo generation |
-| LP Letter Generator | +5 pts | Limited partner letter automation |
+HyDE (Hypothetical Document Embedding) improves retrieval by:
+
+1. Taking the original query
+2. Generating a hypothetical answer with LLM
+3. Embedding the hypothetical answer
+4. Using it to retrieve real evidence
+
+Result: better semantic matching for complex PE questions.
+
+---
+
+### 5️⃣ Score Justification Generator
+
+For any company + dimension combination, generates:
+
+- Score and rubric level (1-5)
+- 95% confidence interval
+- Evidence strength (strong/moderate/weak)
+- Rubric criteria matched
+- Supporting evidence items with citations
+- Gaps preventing a higher score
+- LLM-generated IC-ready summary (150-200 words)
+
+---
+
+### 6️⃣ IC Meeting Prep Workflow
+
+Generates a complete Investment Committee package:
+
+- Portfolio Org-AI-R score
+- Executive summary
+- Key strengths (top 3)
+- Key gaps (top 3)
+- Risk factors
+- Recommendation (PROCEED / PROCEED WITH CAUTION / DO NOT PROCEED)
+- Dimension-by-dimension justifications
+
+---
+
+### 7️⃣ Analyst Notes Collector
+
+Indexes post-LOI due diligence evidence directly from PE analysts.
+
+Supported note types:
+- **Interview transcripts** — CTO, CDO, CFO conversations (confidence = 1.0)
+- **Management meeting notes** — executive sessions (confidence = 1.0)
+- **Site visit observations** — on-the-ground findings (confidence = 1.0)
+- **DD findings** — due diligence investigation results (confidence = 1.0)
+- **Data room summaries** — document repository analysis (confidence = 0.9)
+
+Each note is tagged with:
+- Dimensions discussed (maps to 7 Org-AI-R dimensions)
+- Key findings and risk flags
+- Assessor identity (audit trail)
+
+Analyst notes are indexed into ChromaDB alongside SEC filings and signals, making them searchable and citable in justifications. Primary source confidence (1.0) means they rank highest in evidence retrieval.
+
+---
+
+### 8️⃣ On-Demand Company Onboarding
+
+`POST /api/v1/pipeline/onboard/{ticker}`
+
+Automatically onboards any US-listed company in 5 steps:
+
+1. Register in Snowflake (dynamic industry mapping)
+2. Collect SEC 10-K filings via EDGAR
+3. Collect signals (jobs, patents, board governance, leadership)
+4. Run CS3 scoring pipeline
+5. Index evidence into ChromaDB
+
+Works for **any** US-listed ticker — not just the original 5.
+
+Tested: MSFT (351 items, 64.0), AMZN (391 items, 61.4), JNJ (127 items, 56.1), AAPL (227 items, 67.0)
+
+---
+
+### 9️⃣ Dynamic Signal Collection
+
+**Board Governance** — dynamic CIK lookup via SEC official ticker map for any company
+
+**Patent Signals** — dynamic USPTO name resolution via SEC EDGAR + USPTO assignee API. Uses `_text_phrase` search instead of exact match.
+
+**Leadership Signals** — 3-source enrichment:
+- SEC DEF 14A proxy statements (board governance)
+- Wikidata — current C-suite and board members for any public company
+- Wikipedia — AI background detection from executive articles (detects PHD, AI company veteran, ML keywords)
 
 ---
 
 ## 📡 API Endpoints
 
-### MCP Tools (via stdio server)
+### Search
 ```
-calculate_org_air_score   {"company_id": "NVDA"}
-get_company_evidence      {"company_id": "NVDA", "dimension": "talent"}
-generate_justification    {"company_id": "NVDA", "dimension": "leadership"}
-project_ebitda_impact     {"company_id": "NVDA", "entry_score": 55, "target_score": 75, "h_r_score": 80}
-run_gap_analysis          {"company_id": "NVDA", "target_org_air": 80}
-get_portfolio_summary     {"fund_id": "growth_fund_v"}
+GET /api/v1/search
+  ?query=AI talent hiring machine learning
+  &company_id=NVDA
+  &dimension=talent
+  &top_k=10
+  &min_confidence=0.8
 ```
 
-### REST Endpoints (FastAPI)
+### Score Justification
 ```
-POST /api/v1/pipeline/onboard/{ticker}        On-demand company onboarding
-GET  /api/v1/signals/summary                  Portfolio signal summary
-GET  /api/v1/justification/{ticker}/{dim}     Score justification
-POST /api/v1/justification/{ticker}/ic-prep   IC meeting package
+GET /api/v1/justification/{ticker}/{dimension}
+```
+
+### IC Meeting Prep
+```
+POST /api/v1/justification/{ticker}/ic-prep
+Body: { "focus_dimensions": ["data_infrastructure", "talent"] }
+```
+
+### On-Demand Onboarding
+```
+POST /api/v1/pipeline/onboard/{ticker}?sector=Technology
+GET  /api/v1/pipeline/onboard/{ticker}/status
+GET  /api/v1/pipeline/supported-sectors
 ```
 
 ---
 
 ## 🗄 Infrastructure & Persistence
 
-### Databases
-- **Snowflake** — companies, signals, assessments, dimension scores
-- **ChromaDB** — dense vector + BM25 sparse index for evidence retrieval
+### Vector Database
+- ChromaDB (local, `./chroma_data`)
+- Dense embeddings: `sentence-transformers/all-MiniLM-L6-v2`
+- BM25 sparse index in-memory
+
+### Database
+- Snowflake (primary analytics storage)
 
 ### Document Storage
-- **AWS S3** — raw SEC filings and parsed documents
+- AWS S3 for SEC filings & raw documents
 
 ### Orchestration
-- **LangGraph** — multi-agent supervisor with HITL checkpointing (MemorySaver)
-- **MCP Server** — stdio transport, compatible with Claude Desktop and any MCP client
+- Airflow DAG (`evidence_indexing_dag.py`)
+- Batch evidence indexing automation
 
 ### Containerization
-- **Dockerfile + docker-compose.yml**
+- Dockerfile + docker-compose.yml
 
 ---
 
 ## 📂 Project Structure
 
 ```bash
-PE_ORGAIR_CASESTUDY5/
+PE_ORGAIR_CASESTUDY4/
 │
-├── app/                              # FastAPI application
+├── app/                          # FastAPI application layer
 │   ├── pipelines/
-│   │   ├── leadership_signals.py     # Scrapling + Wikipedia enrichment (real, no mock)
-│   │   ├── board_collector.py        # Dynamic CIK lookup
-│   │   └── patent_signals.py         # Dynamic USPTO name resolution
+│   │   ├── board_collector.py    # Dynamic CIK lookup (any company)
+│   │   ├── patent_signals.py     # Dynamic USPTO name lookup
+│   │   ├── leadership_signals.py # Wikidata + Wikipedia enrichment
+│   │   └── ...
 │   ├── routers/
-│   │   ├── signals.py                # Signal collection (board + scraped)
-│   │   └── pipeline.py               # On-demand onboarding
+│   │   ├── search.py             # Evidence search endpoint
+│   │   ├── justification.py      # Score justification endpoint
+│   │   ├── pipeline.py           # On-demand onboarding
+│   │   └── signals.py            # Signal collection
 │   └── services/
 │
 ├── src/
-│   └── services/
-│       ├── integration/
-│       │   ├── portfolio_data_service.py   # CS1-CS4 unified interface
-│       │   ├── cs1_client.py
-│       │   ├── cs2_client.py
-│       │   ├── cs3_client.py
-│       │   └── cs4_client.py
-│       ├── tracking/
-│       │   └── assessment_history.py       # Trend tracking
-│       ├── analytics/
-│       │   └── fund_air.py                 # Fund-AI-R calculator
-│       └── observability/
-│           └── metrics.py                  # Prometheus metrics
+│   ├── services/
+│   │   ├── integration/          # CS1/CS2/CS3 clients
+│   │   │   ├── cs1_client.py
+│   │   │   ├── cs2_client.py
+│   │   │   └── cs3_client.py
+│   │   ├── retrieval/
+│   │   │   ├── hybrid.py         # Dense + BM25 + RRF fusion
+│   │   │   ├── hyde.py           # HyDE query enhancement
+│   │   │   └── dimension_mapper.py
+│   │   ├── search/
+│   │   │   └── vector_store.py   # ChromaDB wrapper
+│   │   ├── justification/
+│   │   │   └── generator.py      # Score justification LLM
+│   │   ├── workflows/
+│   │   │   └── ic_prep.py        # IC meeting prep
+│   │   └── collection/
+│   │       └── analyst_notes.py  # Post-LOI due diligence notes
 │
-├── mcp/
-│   └── server.py                           # MCP Server (6 tools, 2 resources, 2 prompts)
+├── dags/
+│   └── evidence_indexing_dag.py  # Airflow batch indexing
 │
-├── agents/
-│   ├── state.py                            # LangGraph DueDiligenceState
-│   ├── specialists.py                      # 4 specialist agents
-│   └── supervisor.py                       # Supervisor + HITL graph
+├── scripts/
+│   └── index_evidence.py         # Dynamic evidence indexing (any ticker)
 │
-├── dashboard/
-│   ├── app.py                              # Streamlit portfolio dashboard
-│   └── components/
-│       └── evidence_display.py             # Evidence card component
+├── streamlit_app/
+│   ├── app.py                    # Full dashboard + CS4 pages
+│   └── api_client.py             # API client with CS4 methods
 │
-├── exercises/
-│   └── agentic_due_diligence.py            # End-to-end DD workflow
-│
-├── tests/
-│   └── test_mcp_integration.py             # CS1-CS4 integration tests
+├── tests/                        # 81 passing tests
+├── results/                      # Scoring outputs (NVDA, JPM, WMT, GE, DG)
 │
 ├── Dockerfile
 ├── docker-compose.yml
@@ -326,7 +383,7 @@ PE_ORGAIR_CASESTUDY5/
 
 ```bash
 poetry install
-poetry run python -m patchright install chromium   # for leadership scraping
+poetry run scrapling install  # install browser for stealth scraping
 ```
 
 ### Environment Variables
@@ -334,7 +391,6 @@ poetry run python -m patchright install chromium   # for leadership scraping
 ```bash
 # Required
 ANTHROPIC_API_KEY=...
-OPENAI_API_KEY=...
 SNOWFLAKE_ACCOUNT=...
 SNOWFLAKE_USER=...
 SNOWFLAKE_PASSWORD=...
@@ -343,74 +399,94 @@ SNOWFLAKE_WAREHOUSE=...
 USPTO_API_KEY=...
 
 # Optional
+OPENAI_API_KEY=...
 AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...
 REDIS_URL=...
 ```
 
-### Start FastAPI Backend
+### Index Evidence
 
 ```bash
-poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
+# Index original 5 companies
+poetry run python scripts/index_evidence.py
 
-### Start Streamlit Dashboard
-
-```bash
-poetry run streamlit run streamlit_app/app.py
-```
-
-### Run MCP Server
-
-```bash
-poetry run python mcp/server.py
-```
-
-### Run Agentic Due Diligence
-
-```bash
-poetry run python exercises/agentic_due_diligence.py
+# Index any new company
+poetry run python scripts/index_evidence.py AAPL
+poetry run python scripts/index_evidence.py MSFT GOOGL TSLA
 ```
 
 ### Run Tests
 
 ```bash
-poetry run pytest tests/ -v --tb=short
+poetry run pytest  # 81 tests, 1 skipped
 ```
+
+### Run the Application
+
+#### Start FastAPI Backend
+
+```bash
+poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+API available at:
+- http://localhost:8000
+- Swagger Docs: http://localhost:8000/docs
+
+#### Start Streamlit Dashboard
+
+```bash
+poetry run streamlit run streamlit_app/app.py
+```
+
+Streamlit available at:
+- http://localhost:8501
+
+#### Run Airflow
+
+```bash
+docker-compose up --build
+```
+
+Airflow available at:
+- http://localhost:8081
 
 ---
 
 ## 🧪 Testing & Validation
 
-- MCP tools verified to call CS1-CS4 clients (not hardcoded data)
-- HITL triggers verified for scores outside [40, 85] range
-- All 5 portfolio companies × 7 dimensions tested
-- Leadership signals: NVDA=87, JPM=38, WMT=42, GE=20, DG=25 (board + scraped)
-- Fund-AI-R calculated for growth_fund_v across all 5 tickers
+- 81 unit and integration tests passing (1 skipped intentional)
+- All 3 CS4 endpoints verified (Search, Justification, IC Prep)
+- All 5 original tickers × 7 dimensions = 35 combinations tested
+- New companies tested: MSFT (351 items), AMZN (391 items), JNJ (127 items), AAPL (227 items)
+- Evidence indexed: NVDA (435), JPM (1,756), WMT (317), GE (369), DG (797)
 
 ---
 
 ## 👥 Team Contributions
 
 ### Ayush Fulsundar
-- CS1/CS2/CS3/CS4 integration clients
-- LangGraph specialist agents (SEC, Scoring, Evidence)
-- MCP server tool implementation
-- Portfolio dashboard (Streamlit)
+- CS1/CS2/CS3 Integration clients
+- Hybrid retrieval (Dense + BM25 + RRF)
+- HyDE query enhancement
+- Vector store (ChromaDB)
+- Evidence indexing pipeline
+- Airflow evidence indexing DAG
 
 ### Ishaan Samel
-- LangGraph supervisor with HITL
-- Agentic due diligence workflow
-- Fund-AI-R calculator
-- IC Memo Generator + LP Letter Generator (bonus)
-- Prometheus metrics
+- Score Justification Generator
+- IC Meeting Prep Workflow
+- Analyst Notes Collector
+- LiteLLM multi-provider router
+- Justification API endpoint
+- Streamlit CS4 pages (Evidence Search, Score Justification, Analyst notes)
 
 ### Vaishnavi Srinivas
-- Leadership signals real scraper (Scrapling + Wikipedia REST API)
-- Board governance + scraped exec signals merged pipeline
-- Assessment history tracking
-- Investment Tracker with ROI (bonus)
-- Mem0 semantic memory (bonus)
+- On-demand company onboarding pipeline
+- Dynamic CIK lookup for board governance
+- Dynamic USPTO name resolution for patents
+- Wikidata + Wikipedia leadership enrichment
 
 ---
 
@@ -419,7 +495,7 @@ poetry run pytest tests/ -v --tb=short
 AI tools used during development:
 
 - ChatGPT — debugging, architectural refinement, documentation structuring
-- Claude — debugging support, implementation assistance, codelab generation
+- Claude — debugging support, structured test refinement, implementation assistance
 
 ---
 
